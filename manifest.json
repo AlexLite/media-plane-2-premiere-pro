@@ -1,0 +1,10 @@
+{
+  "manifestVersion": 5,
+  "id": "com.example.plane-timecode-review",
+  "name": "Plane Timecode Review",
+  "version": "1.0.0",
+  "main": "index.html",
+  "host": [{ "app": "PPRO", "minVersion": "25.0" }],
+  "entrypoints": [{ "type": "panel", "id": "planeReview", "label": { "default": "Plane Review" }, "minimumSize": { "width": 320, "height": 420 }, "preferredDockedSize": { "width": 390, "height": 640 } }],
+  "requiredPermissions": { "network": { "domains": ["https://*"] }, "localFileSystem": "request" }
+}
