@@ -13,7 +13,8 @@ This branch intentionally replaces the original Plane-comments-only prototype. I
 - `BindingStore`: non-secret `Premiere project GUID + sequence GUID → Plane context` mapping and UXP secure storage for the Plane PAT.
 - `PremiereAdapter`: isolated Premiere UXP 25.6+ capability boundary.
 - Canonical FreeFrame marker identity and rational frame/time conversion.
-- EN/RU locale dictionaries and parity test.
+- Connection and work-item binding UI with current-user validation, workspace/project/work-item discovery, restart restoration, and local-only disconnect.
+- EN/RU locale dictionaries, parity coverage, and a hardcoded UI-text scanner.
 
 The runtime must never use ordinary Plane comments as media-review comments, parse semantic timecodes from Plane discussion, persist a FreeFrame token, or accept a user-entered FreeFrame API URL.
 
@@ -35,11 +36,11 @@ npm run check
 
 `npm run build` emits `dist/main.js`. `dist/`, `.ccx`, UXP Developer Tool artifacts, credentials, and media exports are intentionally ignored and must not be committed.
 
-To load locally, run the build, add this repository folder in UXP Developer Tool, load it into Premiere Pro, and open **Window → Extensions → Plane × FreeFrame Review**. The current panel is an integration-status shell; continue the UI workflow against the modules in `src/`.
+To load locally, run the build, add this repository folder in UXP Developer Tool, load it into Premiere Pro, and open **Window → Extensions → Plane × FreeFrame Review**. The panel can validate Plane credentials, display the current user, select a workspace/project/work item, bind the active sequence, restore that binding after restart, and disconnect it locally without remote unlink.
 
 ## Suggested next slices
 
-1. Finish connection, work-item binding, asset selection/linking, and permission-aware state UI.
+1. Add the controlled unlinked state, asset catalog search, create/link confirmation, conflict handling, and permission-aware remote unlink.
 2. Complete exported-file fallback and direct `EncoderManager.exportSequence` adapter with progress/cancellation smoke tests.
 3. Connect `MultipartUploader`, processing poller, version history, and terminal states.
 4. Implement marker Actions inside `Project.executeTransaction`, then verify idempotent reconciliation in Premiere.
