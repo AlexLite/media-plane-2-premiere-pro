@@ -1,5 +1,7 @@
 export type ReviewScope = "review:read" | "review:comment" | "review:upload" | "review:manage";
 
+export interface PlaneUser { id: string; email: string; displayName: string }
+export interface WorkspaceSummary { id: string; slug: string; name: string }
 export interface WorkItem { id: string; identifier: string; name: string }
 export interface ProjectSummary { id: string; name: string; identifier?: string }
 
@@ -18,6 +20,10 @@ export interface SequenceInfo {
   name: string;
   durationSeconds?: number;
 }
+export type PremiereContext =
+  | { status: "no-project" }
+  | { status: "no-sequence"; projectGuid: string }
+  | { status: "ready"; sequence: SequenceInfo };
 
 export interface ReviewSession {
   asset_id: string;
