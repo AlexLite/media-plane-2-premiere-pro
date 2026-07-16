@@ -20,11 +20,12 @@ This branch intentionally replaces the original Plane-comments-only prototype. I
 - `PremiereDirectExporter`: explicit `.epr` preset and output path using the official Premiere UXP 25.6 `EncoderManager.exportSequence` boundary.
 - `BindingStore`: non-secret `Premiere project GUID + sequence GUID → Plane context` mapping and UXP secure storage for the Plane PAT.
 - `PremiereAdapter`: isolated Premiere UXP 25.6+ active-context, sequence-duration, and playhead boundary.
+- `Diagnostics`: read-only host, storage, exact-binding, Plane, FreeFrame, version, timing, and scope checks with a deliberately redacted copyable report.
+- `Shell`: one production-facing Review, Media, and Diagnostics surface with keyboard tab navigation and a locally persisted non-secret active tab.
 - Connection and work-item binding UI with current-user validation, workspace/project/work-item discovery, restart restoration, and local-only disconnect.
 - Controlled unlinked state and permission-aware asset workflow: Plane-proxied catalog search, video asset creation, cross-service link confirmation, conflict handling, and confirmed remote unlink.
-- A separate comments/markers entrypoint inside the same UXP panel. It reuses the exact local sequence binding and issue-bound session; it introduces no second login, endpoint, or backend.
 - Compact version-first review UI inspired by the interaction model of Frame.io without copying its branding or pixel design.
-- EN/RU locale dictionaries, parity coverage, and a hardcoded UI-text scanner covering both panel entrypoints.
+- EN/RU locale parity and hardcoded UI-text scanners covering every panel entrypoint.
 
 The runtime must never use ordinary Plane comments as media-review comments, parse semantic timecodes from Plane discussion, persist a FreeFrame token or presigned URL, or accept a user-entered FreeFrame API URL.
 
@@ -61,6 +62,12 @@ The runtime must never use ordinary Plane comments as media-review comments, par
 - Upload completion is not presented as success. The panel waits with bounded backoff until the exact uploaded version is `ready` and scoped playback metadata is available.
 - The previously ready version remains the visible review state until the new version is fully confirmed.
 
+## Diagnostics and staging validation
+
+The Diagnostics tab is read-only. Its copyable report contains stable check IDs, statuses, boolean capability values, and counts only. It excludes credentials, signed URLs, service origins, project and sequence IDs, work-item IDs, asset/version IDs, local paths, media contents, and raw exception text.
+
+Use the complete [Plane × FreeFrame Premiere staging smoke checklist](docs/staging-smoke-checklist.md) for host, integration, permission, upload, timing, marker, failure, security, and evidence validation. The checklist explicitly prohibits production deployment, merge activity, and `.96` host access during smoke testing.
+
 ## Development
 
 Requirements: Node.js for local tooling, Adobe Premiere Pro 25.6 or later, and UXP Developer Tool.
@@ -70,22 +77,25 @@ npm ci
 npm run check
 ```
 
-`npm run build` emits `dist/main.js` and `dist/review-panel.js`. `dist/`, `.ccx`, UXP Developer Tool artifacts, credentials, and media exports are intentionally ignored and must not be committed.
+`npm run build` emits `dist/shell.js`, `dist/main.js`, `dist/review-panel.js`, and `dist/diagnostics-panel.js`. `dist/`, `.ccx`, UXP Developer Tool artifacts, credentials, and media exports are intentionally ignored and must not be committed.
 
 To load locally, run the build, add this repository folder in UXP Developer Tool, load it into Premiere Pro, and open **Window → Extensions → Plane × FreeFrame Review**.
 
 ## Required host smoke checks
 
-1. Validate PAT, work-item binding restoration, local disconnect, asset search/create/link/conflict/unlink, and permission-aware controls against the integration Plane and FreeFrame branches.
-2. Confirm `.epr` extension discovery and `exportSequence` acceptance in Premiere Pro 25.6+ with Adobe Media Encoder installed.
-3. Determine and implement the documented host mechanism for render progress, render completion/error/cancel events, and host-side render cancellation before claiming direct-export progress/cancellation complete.
-4. Verify exported-file chunk reads, multipart CORS/ETag exposure, cancellation/abort, processing polling, and `ready` playback metadata without logging media paths or signed URLs.
-5. Verify selected-version FPS/duration, NTSC rates, `getPlayerPosition()`, current-frame comment creation, seconds-only compatibility, timing conflicts, out-of-version/out-of-sequence states, and resolve/reopen against the integration stack.
-6. Verify marker collection reads, one-step transaction undo, point/range marker duration, move/update/remove Actions, manual-marker correction, stale/duplicate cleanup, unrelated-marker preservation, and automatic post-write resync in Premiere Pro 25.6+.
+1. Validate the unified Review, Media, and Diagnostics shell at minimum and wide docked widths, including keyboard tab navigation and tab restoration.
+2. Validate PAT, work-item binding restoration, local disconnect, asset search/create/link/conflict/unlink, and permission-aware controls against the integration Plane and FreeFrame branches.
+3. Confirm `.epr` extension discovery and `exportSequence` acceptance in Premiere Pro 25.6+ with Adobe Media Encoder installed.
+4. Determine and implement the documented host mechanism for render progress, render completion/error/cancel events, and host-side render cancellation before claiming direct-export progress/cancellation complete.
+5. Verify exported-file chunk reads, multipart CORS/ETag exposure, cancellation/abort, processing polling, and `ready` playback metadata without logging media paths or signed URLs.
+6. Verify selected-version FPS/duration, NTSC rates, `getPlayerPosition()`, current-frame comment creation, seconds-only compatibility, timing conflicts, out-of-version/out-of-sequence states, and resolve/reopen against the integration stack.
+7. Verify marker collection reads, one-step transaction undo, point/range marker duration, move/update/remove Actions, manual-marker correction, stale/duplicate cleanup, unrelated-marker preservation, and automatic post-write resync in Premiere Pro 25.6+.
+8. Copy diagnostics after success and representative failures and confirm the report remains redacted.
 
 ## Suggested next slices
 
-1. Add diagnostics and a complete Plane/FreeFrame/Premiere staging smoke checklist.
-2. Consolidate the two visual entrypoints into a single production panel shell after host smoke confirms the review/marker flow.
+1. Run the complete staging checklist against Premiere Pro 25.6+, Plane, FreeFrame, worker, and object storage.
+2. Resolve host-smoke findings and consolidate shared runtime state only where the observed workflow requires it.
+3. Add documented render-event progress and host cancellation only after the supported Premiere mechanism is verified.
 
 Authoritative specification: [Plane Premiere UXP prompt](https://github.com/AlexLite/media-plane/blob/integration/freeframe-review/docs/uxp-premiere-agent-prompt.md).
