@@ -13,6 +13,8 @@ function list(value: unknown): unknown[] {
 function record(value: unknown): Record<string, unknown> | undefined { return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
 function nonEmptyString(value: unknown): value is string { return typeof value === "string" && value.length > 0; }
 function optionalString(value: unknown): string | undefined { return typeof value === "string" && value.length > 0 ? value : undefined; }
+function nullableString(value: unknown): string | null | undefined { return value === null ? null : typeof value === "string" ? value : undefined; }
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function parseUser(value: unknown): PlaneUser {
   const body = record(value);
@@ -36,6 +38,23 @@ function parseWorkItem(value: unknown): WorkItem {
   const body = record(value);
   if (!body || !nonEmptyString(body.id) || !nonEmptyString(body.name) || !nonEmptyString(body.identifier)) throw new PlaneError("Plane returned an invalid work item", 502, value);
   return { id: body.id, name: body.name, identifier: body.identifier };
+}
+
+function parseReviewAsset(value: unknown): ReviewAsset {
+  const body = record(value);
+  const description = nullableString(body?.description);
+  const thumbnailUrl = nullableString(body?.thumbnail_url);
+  if (!body || !nonEmptyString(body.id) || !UUID.test(body.id) || !nonEmptyString(body.name) || !nonEmptyString(body.asset_type) || description === undefined || thumbnailUrl === undefined) {
+    throw new PlaneError("Plane returned an invalid review asset", 502, value);
+  }
+  return {
+    id: body.id,
+    name: body.name,
+    asset_type: body.asset_type,
+    description,
+    status: optionalString(body.status),
+    thumbnail_url: thumbnailUrl,
+  };
 }
 
 export class PlaneClient {
@@ -84,7 +103,7 @@ export class PlaneClient {
       if (typeof body.can_manage !== "boolean") throw new PlaneError("Plane returned an invalid unlinked state", 502, body);
       return { linked: false, can_manage: body.can_manage };
     }
-    if (!body || !nonEmptyString(body.asset_id) || !nonEmptyString(body.integration_token) || !Number.isInteger(body.expires_in) || (body.expires_in as number) <= 0 || typeof body.can_manage !== "boolean") {
+    if (!body || !nonEmptyString(body.asset_id) || !UUID.test(body.asset_id) || !nonEmptyString(body.integration_token) || !Number.isInteger(body.expires_in) || (body.expires_in as number) <= 0 || typeof body.can_manage !== "boolean") {
       throw new PlaneError("Plane returned an invalid review session", 502, body);
     }
     let freeframeApiUrl: string;
@@ -104,13 +123,18 @@ export class PlaneClient {
 
   async searchAssets(workspace: string, project: string, issue: string, query = ""): Promise<ReviewAsset[]> {
     const path = `${this.reviewPath(workspace, project, issue, "assets")}?q=${encodeURIComponent(query)}&limit=50`;
-    return list(await this.request(path)) as ReviewAsset[];
+    return list(await this.request(path)).map(parseReviewAsset);
   }
   async createAsset(workspace: string, project: string, issue: string, name: string): Promise<ReviewAsset> {
-    return await this.request<ReviewAsset>(this.reviewPath(workspace, project, issue, "assets"), { method: "POST", body: JSON.stringify({ name, asset_type: "video", description: null }) }) as ReviewAsset;
+    const normalizedName = name.trim();
+    if (!normalizedName || normalizedName.length > 255) throw new PlaneError("Asset name is invalid", 400);
+    return parseReviewAsset(await this.request<unknown>(this.reviewPath(workspace, project, issue, "assets"), { method: "POST", body: JSON.stringify({ name: normalizedName, asset_type: "video", description: null }) }));
   }
-  async linkAsset(workspace: string, project: string, issue: string, assetId: string): Promise<void> {
-    await this.request(this.reviewPath(workspace, project, issue, "session"), { method: "PUT", body: JSON.stringify({ asset_id: assetId }) });
+  async linkAsset(workspace: string, project: string, issue: string, assetId: string): Promise<string> {
+    if (!UUID.test(assetId)) throw new PlaneError("Asset ID is invalid", 400);
+    const body = record(await this.request<unknown>(this.reviewPath(workspace, project, issue, "session"), { method: "PUT", body: JSON.stringify({ asset_id: assetId }) }));
+    if (!body || body.asset_id !== assetId) throw new PlaneError("Plane returned an invalid linked asset", 502, body);
+    return assetId;
   }
   async unlinkAsset(workspace: string, project: string, issue: string): Promise<void> {
     await this.request(this.reviewPath(workspace, project, issue, "session"), { method: "DELETE" });

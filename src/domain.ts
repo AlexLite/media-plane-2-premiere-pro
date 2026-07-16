@@ -37,10 +37,31 @@ export interface UnlinkedReview { linked: false; can_manage: boolean }
 export interface LinkedReview { linked: true; session: ReviewSession }
 export type ReviewSessionState = UnlinkedReview | LinkedReview;
 
-export interface ReviewAsset { id: string; name: string; asset_type: string; description?: string | null }
+export interface ReviewAsset {
+  id: string;
+  name: string;
+  asset_type: string;
+  description?: string | null;
+  status?: string;
+  thumbnail_url?: string | null;
+}
 export interface ReviewPermissions { read: boolean; comment: boolean; upload: boolean; manage: boolean }
-export interface ReviewVersion { id: string; version_number: number; processing_status: string; created_at: string | null }
-export interface ReviewBootstrap { asset: ReviewAsset; versions: ReviewVersion[]; permissions: ReviewPermissions }
+export interface ReviewVersion {
+  id: string;
+  version_number: number;
+  processing_status: string;
+  created_at: string | null;
+  original_filename?: string | null;
+  mime_type?: string | null;
+  file_size_bytes?: number | null;
+}
+export interface ReviewBootstrapContext { workspace_id: string; project_id: string; issue_id: string }
+export interface ReviewBootstrap {
+  context: ReviewBootstrapContext;
+  asset: ReviewAsset;
+  versions: ReviewVersion[];
+  permissions: ReviewPermissions;
+}
 
 export interface ReviewComment {
   id: string;

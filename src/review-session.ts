@@ -1,4 +1,4 @@
-import type { ReviewScope, SequenceBinding } from "./domain";
+import type { ReviewScope, ReviewSessionState, SequenceBinding } from "./domain";
 import { FreeFrameClient } from "./freeframe-client";
 import { PlaneClient } from "./plane-client";
 
@@ -15,14 +15,16 @@ export class ReviewSessionManager {
   constructor(private readonly plane: PlaneClient, private readonly now = () => Date.now()) {}
   private discardActive(): void { this.active?.freeframe.clearSession(); this.active = undefined; }
   clear(): void { this.discardActive(); this.trustedRoot = undefined; this.contextKey = undefined; }
-  async get(binding: SequenceBinding): Promise<ActiveReviewSession | undefined> {
+
+  private prepareContext(binding: SequenceBinding): string {
     const contextKey = reviewContextKey(binding);
     if (this.contextKey && this.contextKey !== contextKey) this.clear();
     this.contextKey = contextKey;
-    if (this.active && this.active.contextKey === contextKey && this.active.expiresAt - this.now() > 5_000) return this.active;
-    this.discardActive();
+    return contextKey;
+  }
 
-    const state = await this.plane.getReviewSession(binding.workspaceSlug, binding.projectId, binding.workItemId);
+  private async activate(binding: SequenceBinding, state: ReviewSessionState, contextKey: string): Promise<ActiveReviewSession | undefined> {
+    this.discardActive();
     if (!state.linked) { this.trustedRoot = undefined; return undefined; }
     const freeframe = new FreeFrameClient(state.session.freeframe_api_url);
     if (this.trustedRoot && freeframe.root !== this.trustedRoot) throw new Error("Plane returned a different FreeFrame API endpoint for the bound review context");
@@ -39,5 +41,17 @@ export class ReviewSessionManager {
       contextKey,
     };
     return this.active;
+  }
+
+  async get(binding: SequenceBinding): Promise<ActiveReviewSession | undefined> {
+    const contextKey = this.prepareContext(binding);
+    if (this.active && this.active.contextKey === contextKey && this.active.expiresAt - this.now() > 5_000) return this.active;
+    const state = await this.plane.getReviewSession(binding.workspaceSlug, binding.projectId, binding.workItemId);
+    return this.activate(binding, state, contextKey);
+  }
+
+  async getFromState(binding: SequenceBinding, state: ReviewSessionState): Promise<ActiveReviewSession | undefined> {
+    const contextKey = this.prepareContext(binding);
+    return this.activate(binding, state, contextKey);
   }
 }

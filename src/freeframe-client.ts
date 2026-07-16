@@ -1,4 +1,11 @@
-import type { ReviewBootstrap, ReviewComment, ReviewScope } from "./domain";
+import type {
+  ReviewAsset,
+  ReviewBootstrap,
+  ReviewComment,
+  ReviewPermissions,
+  ReviewScope,
+  ReviewVersion,
+} from "./domain";
 
 export class FreeFrameError extends Error { constructor(message: string, readonly status?: number) { super(message); } }
 
@@ -13,6 +20,7 @@ export interface FreeFrameSession {
   scopes: ReviewScope[];
 }
 export interface ExpectedReviewContext { projectId: string; issueId: string }
+export interface ExpectedReviewBootstrap extends ExpectedReviewContext { assetId: string }
 
 const REVIEW_SCOPES = new Set<ReviewScope>(["review:read", "review:comment", "review:upload", "review:manage"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -22,6 +30,12 @@ function record(value: unknown): Record<string, unknown> | undefined {
 }
 function nonEmptyString(value: unknown): value is string { return typeof value === "string" && value.length > 0; }
 function uuid(value: unknown): value is string { return nonEmptyString(value) && UUID.test(value); }
+function optionalString(value: unknown): string | null | undefined {
+  return value === null ? null : typeof value === "string" ? value : undefined;
+}
+function optionalFiniteNumber(value: unknown): number | null | undefined {
+  return value === null ? null : typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
 
 export function normalizeFreeFrameApiUrl(value: unknown): string {
   if (typeof value !== "string" || !value || value.trim() !== value) throw new FreeFrameError("FreeFrame API URL is invalid");
@@ -68,6 +82,78 @@ function parseSession(value: unknown, expected?: ExpectedReviewContext): FreeFra
   };
 }
 
+function parseAsset(value: unknown): ReviewAsset {
+  const body = record(value);
+  if (!body || !uuid(body.id) || !nonEmptyString(body.name) || !nonEmptyString(body.asset_type)) {
+    throw new FreeFrameError("FreeFrame returned an invalid review asset", 502);
+  }
+  const description = optionalString(body.description);
+  const status = optionalString(body.status);
+  const thumbnailUrl = optionalString(body.thumbnail_url);
+  if (description === undefined || status === undefined || thumbnailUrl === undefined) {
+    throw new FreeFrameError("FreeFrame returned an invalid review asset", 502);
+  }
+  return {
+    id: body.id,
+    name: body.name,
+    asset_type: body.asset_type,
+    description,
+    status: status ?? undefined,
+    thumbnail_url: thumbnailUrl,
+  };
+}
+
+function parseVersion(value: unknown): ReviewVersion {
+  const body = record(value);
+  if (!body || !uuid(body.id) || !Number.isInteger(body.version_number) || (body.version_number as number) <= 0 || !nonEmptyString(body.processing_status)) {
+    throw new FreeFrameError("FreeFrame returned an invalid review version", 502);
+  }
+  const createdAt = optionalString(body.created_at);
+  const originalFilename = optionalString(body.original_filename);
+  const mimeType = optionalString(body.mime_type);
+  const fileSizeBytes = optionalFiniteNumber(body.file_size_bytes);
+  if (createdAt === undefined || originalFilename === undefined || mimeType === undefined || fileSizeBytes === undefined || (typeof fileSizeBytes === "number" && fileSizeBytes < 0)) {
+    throw new FreeFrameError("FreeFrame returned an invalid review version", 502);
+  }
+  return {
+    id: body.id,
+    version_number: body.version_number as number,
+    processing_status: body.processing_status,
+    created_at: createdAt,
+    original_filename: originalFilename,
+    mime_type: mimeType,
+    file_size_bytes: fileSizeBytes,
+  };
+}
+
+function parsePermissions(value: unknown): ReviewPermissions {
+  const body = record(value);
+  if (!body || typeof body.read !== "boolean" || typeof body.comment !== "boolean" || typeof body.upload !== "boolean" || typeof body.manage !== "boolean") {
+    throw new FreeFrameError("FreeFrame returned invalid review permissions", 502);
+  }
+  return { read: body.read, comment: body.comment, upload: body.upload, manage: body.manage };
+}
+
+function parseBootstrap(value: unknown, expected: ExpectedReviewBootstrap): ReviewBootstrap {
+  const body = record(value);
+  const context = record(body?.context);
+  if (!body || !context || !uuid(context.workspace_id) || !uuid(context.project_id) || !uuid(context.issue_id)) {
+    throw new FreeFrameError("FreeFrame returned an invalid review bootstrap context", 502);
+  }
+  if (context.project_id !== expected.projectId || context.issue_id !== expected.issueId) {
+    throw new FreeFrameError("FreeFrame returned a mismatched review bootstrap context", 403);
+  }
+  const asset = parseAsset(body.asset);
+  if (asset.id !== expected.assetId) throw new FreeFrameError("FreeFrame returned a mismatched review asset", 403);
+  if (!Array.isArray(body.versions)) throw new FreeFrameError("FreeFrame returned invalid review versions", 502);
+  return {
+    context: { workspace_id: context.workspace_id, project_id: context.project_id, issue_id: context.issue_id },
+    asset,
+    versions: body.versions.map(parseVersion),
+    permissions: parsePermissions(body.permissions),
+  };
+}
+
 export class FreeFrameClient {
   private accessToken = "";
   readonly root: string;
@@ -97,7 +183,11 @@ export class FreeFrameClient {
     return session;
   }
   clearSession(): void { this.accessToken = ""; }
-  bootstrap(assetId: string): Promise<ReviewBootstrap> { return this.request(`/integrations/plane/assets/${encodeURIComponent(assetId)}/review`); }
+  async bootstrap(assetId: string, expected: ExpectedReviewContext): Promise<ReviewBootstrap> {
+    if (!uuid(assetId)) throw new FreeFrameError("FreeFrame asset ID is invalid", 400);
+    const payload = await this.request<unknown>(`/integrations/plane/assets/${encodeURIComponent(assetId)}/review`);
+    return parseBootstrap(payload, { ...expected, assetId });
+  }
   comments(assetId: string, versionId: string): Promise<ReviewComment[]> { return this.request(`/integrations/plane/assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/comments`); }
   createComment(assetId: string, versionId: string, body: { body: string; timecode_start?: number; timecode_end?: number; annotation?: { drawing_data: Record<string, unknown>; frame_number?: number } }): Promise<ReviewComment> {
     return this.request(`/integrations/plane/assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/comments`, { method: "POST", body: JSON.stringify(body) });
