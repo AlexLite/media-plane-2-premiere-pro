@@ -32,7 +32,6 @@ export interface ReviewSession {
   can_manage: boolean;
   freeframe_api_url: string;
 }
-
 export interface UnlinkedReview { linked: false; can_manage: boolean }
 export interface LinkedReview { linked: true; session: ReviewSession }
 export type ReviewSessionState = UnlinkedReview | LinkedReview;
@@ -54,6 +53,9 @@ export interface ReviewVersion {
   original_filename?: string | null;
   mime_type?: string | null;
   file_size_bytes?: number | null;
+  duration_seconds?: number | null;
+  fps_numerator?: number | null;
+  fps_denominator?: number | null;
 }
 export interface ReviewBootstrapContext { workspace_id: string; project_id: string; issue_id: string }
 export interface ReviewBootstrap {
@@ -64,17 +66,33 @@ export interface ReviewBootstrap {
 }
 export interface ReviewStream { url: string; asset_type: string; expires_in: number }
 
+export interface ReviewCommentAuthor { id: string; name: string; avatar_url: string | null }
+export interface ReviewCommentGuestAuthor { id: string; name: string; email: string }
+export interface ReviewCommentAnnotation {
+  id: string;
+  comment_id: string;
+  drawing_data: Record<string, unknown>;
+  frame_number: number | null;
+  carousel_position: number | null;
+}
 export interface ReviewComment {
   id: string;
   asset_id: string;
   version_id: string;
+  parent_id: string | null;
+  author_id: string | null;
+  guest_author_id: string | null;
+  timecode_start: number | null;
+  timecode_end: number | null;
   body: string;
   resolved: boolean;
-  author?: { id: string; name: string; avatar_url: string | null } | null;
-  annotation?: { frame_number: number | null } | null;
-  range_end_frame?: number | null;
-  fps_numerator?: number | null;
-  fps_denominator?: number | null;
+  visibility: "public";
+  created_at: string;
+  updated_at: string;
+  author: ReviewCommentAuthor | null;
+  guest_author: ReviewCommentGuestAuthor | null;
+  annotation: ReviewCommentAnnotation | null;
+  replies: ReviewComment[];
 }
 
 export interface Marker { id: string; startSeconds: number; name: string; comments: string }
