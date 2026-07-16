@@ -11,11 +11,16 @@ import { type MessageKey, t } from "./locale";
 import { BindingStore } from "./persistence";
 import { PlaneClient, PlaneError } from "./plane-client";
 import { PremiereAdapter } from "./premiere";
+import { PremiereDirectExporter, type PreparedDirectExport } from "./premiere-export";
 import { ReviewSessionManager } from "./review-session";
+import { ReviewUploadController, type TransferSnapshot } from "./upload-controller";
+import { UxpMediaFiles, type SelectedMediaFile } from "./uxp-media";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
 const store = new BindingStore();
 const premiere = new PremiereAdapter();
+const directExporter = new PremiereDirectExporter();
+const mediaFiles = new UxpMediaFiles();
 
 interface ConnectionDraft {
   baseUrl: string;
@@ -54,6 +59,10 @@ let assetDraft: AssetDraft = emptyAssetDraft();
 let errorKey: MessageKey | undefined;
 let noticeKey: MessageKey | undefined;
 let busyKey: MessageKey | undefined;
+let selectedMedia: SelectedMediaFile | undefined;
+let preparedExport: PreparedDirectExport | undefined;
+let transfer: TransferSnapshot = { stage: "idle", progress: 0 };
+let transferController: ReviewUploadController | undefined;
 
 function emptyDraft(binding?: SequenceBinding): ConnectionDraft {
   return {
@@ -74,6 +83,24 @@ const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&":
 const value = (id: string): string => (root.querySelector<HTMLInputElement | HTMLSelectElement>(`#${id}`)?.value ?? "").trim();
 const selected = (actual: string, expected: string): string => actual === expected ? " selected" : "";
 const disabled = (condition: boolean): string => condition ? " disabled" : "";
+
+
+function resetTransferState(): void {
+  transferController?.cancel();
+  transferController = undefined;
+  selectedMedia = undefined;
+  preparedExport = undefined;
+  transfer = { stage: "idle", progress: 0 };
+}
+function transferRunning(): boolean { return ["exporting", "uploading", "processing"].includes(transfer.stage); }
+function transferStageKey(): MessageKey {
+  return ({ idle: "transferIdle", exporting: "transferExporting", uploading: "transferUploading", processing: "transferProcessing", ready: "transferReady", failed: "transferFailed", cancelled: "transferCancelled" } as const)[transfer.stage];
+}
+function fileSize(value: number): string {
+  if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(2)} MB`;
+  return `${Math.ceil(value / 1024)} KB`;
+}
 
 function shell(content: string): string {
   return `<header><h1>${escape(t("title"))}</h1><p>${escape(t("architecture"))}</p></header><main>${content}</main>`;
@@ -152,9 +179,25 @@ function renderLinkedReview(review: Extract<AssetReviewState, { linked: true }>)
   }
   return `<section><h2>${escape(t("assetLinkTitle"))}</h2><p><strong>${escape(t("linkedAsset"))}:</strong> ${escape(review.asset.name)}</p>${version}${unlink}</section>`;
 }
+function renderUpload(review: Extract<AssetReviewState, { linked: true }>): string {
+  if (!review.permissions.upload) return `<section><h2>${escape(t("uploadTitle"))}</h2><p class="hint">${escape(t("uploadPermissionRequired"))}</p></section>`;
+  const running = transferRunning();
+  const selectedFile = selectedMedia
+    ? `<p><strong>${escape(t("selectedFile"))}:</strong> ${escape(selectedMedia.name)}<br><strong>${escape(t("fileSize"))}:</strong> ${escape(fileSize(selectedMedia.size))}</p>`
+    : `<p class="hint">${escape(t("noFileSelected"))}</p>`;
+  const prepared = preparedExport
+    ? `<p><strong>${escape(t("exportPreset"))}:</strong> ${escape(preparedExport.presetName)}<br><strong>${escape(t("outputPath"))}:</strong> ${escape(preparedExport.outputPath)}</p>`
+    : `<p class="hint">${escape(t("noExportPrepared"))}</p>`;
+  const direct = directExporter.supports()
+    ? `${prepared}<button data-action="prepare-export" class="secondary"${disabled(running || Boolean(busyKey))}>${escape(t("choosePresetOutput"))}</button><button data-action="export-upload"${disabled(running || !preparedExport || Boolean(busyKey))}>${escape(t("exportAndUpload"))}</button><p class="hint">${escape(t("directExportSmokeHint"))}</p>`
+    : `<p class="hint">${escape(t("directExportUnavailable"))}</p>`;
+  const progress = Math.max(0, Math.min(100, Math.round(transfer.progress * 100)));
+  const transferView = `<p><strong>${escape(t("transferStage"))}:</strong> ${escape(t(transferStageKey()))}<br><strong>${escape(t("progress"))}:</strong> ${progress}%${transfer.processingStatus ? `<br><strong>${escape(t("processingStatus"))}:</strong> ${escape(transfer.processingStatus)}` : ""}</p>${running ? `<button data-action="cancel-transfer" class="danger">${escape(t("cancelTransfer"))}</button>` : ""}`;
+  return `<section><h2>${escape(t("uploadTitle"))}</h2><h3>${escape(t("exportedFileFallback"))}</h3>${selectedFile}<button data-action="select-media" class="secondary"${disabled(running || Boolean(busyKey))}>${escape(t("selectExportedFile"))}</button><button data-action="upload-selected"${disabled(running || !selectedMedia || Boolean(busyKey))}>${escape(t("uploadSelected"))}</button><div class="separator"></div><h3>${escape(t("directExport"))}</h3>${direct}<div class="separator"></div>${transferView}</section>`;
+}
 function renderAssetReview(): string {
   if (!bound?.review) return `<section><h2>${escape(t("assetLinkTitle"))}</h2><p class="warning">${escape(t("reviewUnavailable"))}</p></section>`;
-  return bound.review.linked ? renderLinkedReview(bound.review) : renderUnlinkedReview(bound.review);
+  return bound.review.linked ? `${renderLinkedReview(bound.review)}${renderUpload(bound.review)}` : renderUnlinkedReview(bound.review);
 }
 function renderBound(): void {
   if (!sequence || !bound) return;
@@ -291,6 +334,7 @@ async function refreshBound(): Promise<void> {
 function disconnectLocal(): void {
   if (!bound) return;
   const binding = bound.binding;
+  resetTransferState();
   bound.sessions.clear();
   store.disconnect(binding.projectGuid, binding.sequenceId);
   bound = undefined; draft = emptyDraft(binding); assetDraft = emptyAssetDraft(); errorKey = undefined; noticeKey = "localDisconnected"; busyKey = undefined; render();
@@ -314,7 +358,7 @@ async function linkSelectedAsset(): Promise<void> {
   errorKey = undefined; noticeKey = undefined; busyKey = "linkingAsset"; render();
   try {
     bound.review = await linkAssetAndConfirm(bound.binding, bound.client, bound.sessions, asset);
-    assetDraft = emptyAssetDraft(); noticeKey = "assetLinked";
+    resetTransferState(); assetDraft = emptyAssetDraft(); noticeKey = "assetLinked";
   } catch (error) { errorKey = error instanceof PlaneError && error.status === 409 ? "assetConflict" : "assetLinkError"; }
   finally { busyKey = undefined; render(); }
 }
@@ -325,7 +369,7 @@ async function createAndLinkAsset(): Promise<void> {
   errorKey = undefined; noticeKey = undefined; busyKey = "creatingAsset"; render();
   try {
     bound.review = await createVideoAssetAndLink(bound.binding, bound.client, bound.sessions, assetDraft.newAssetName);
-    assetDraft = emptyAssetDraft(); noticeKey = "assetCreatedLinked";
+    resetTransferState(); assetDraft = emptyAssetDraft(); noticeKey = "assetCreatedLinked";
   } catch (error) { errorKey = error instanceof PlaneError && error.status === 409 ? "assetConflict" : "assetCreateError"; }
   finally { busyKey = undefined; render(); }
 }
@@ -340,10 +384,56 @@ async function confirmRemoteUnlink(): Promise<void> {
   errorKey = undefined; noticeKey = undefined; busyKey = "unlinkingAsset"; render();
   try {
     bound.review = await unlinkAssetAndConfirm(bound.binding, bound.client, bound.sessions, current);
-    assetDraft = emptyAssetDraft(); noticeKey = "assetUnlinkedConfirmed";
+    resetTransferState(); assetDraft = emptyAssetDraft(); noticeKey = "assetUnlinkedConfirmed";
   } catch { errorKey = "assetUnlinkError"; assetDraft.confirmUnlink = false; }
   finally { busyKey = undefined; render(); }
 }
+async function selectExportedMedia(): Promise<void> {
+  if (!bound?.review?.linked || !bound.review.permissions.upload || transferRunning()) return;
+  errorKey = undefined; noticeKey = undefined; busyKey = "selectingMedia"; render();
+  try {
+    const file = await mediaFiles.selectExported();
+    if (file) { selectedMedia = file; noticeKey = "mediaSelected"; }
+  } catch { errorKey = "mediaSelectionError"; }
+  finally { busyKey = undefined; render(); }
+}
+async function prepareDirectExport(): Promise<void> {
+  if (!sequence || !bound?.review?.linked || !bound.review.permissions.upload || transferRunning()) return;
+  errorKey = undefined; noticeKey = undefined; busyKey = "preparingExport"; render();
+  try {
+    const prepared = await directExporter.prepare(sequence.projectGuid, sequence.id, sequence.name);
+    if (prepared) { preparedExport = prepared; noticeKey = "exportPrepared"; }
+  } catch { errorKey = "exportPrepareError"; }
+  finally { busyKey = undefined; render(); }
+}
+async function runTransfer(source: SelectedMediaFile | ((signal: AbortSignal) => Promise<SelectedMediaFile>)): Promise<void> {
+  if (!bound?.review?.linked || !bound.review.permissions.upload || transferRunning()) return;
+  errorKey = undefined; noticeKey = undefined;
+  try {
+    const active = await bound.sessions.get(bound.binding);
+    if (!active || active.assetId !== bound.review.asset.id) throw new Error();
+    const controller = new ReviewUploadController(active.freeframe);
+    transferController = controller;
+    const transferBinding = { ...bound.binding };
+    await controller.run(active.assetId, { projectId: transferBinding.projectId, issueId: transferBinding.workItemId }, source, {
+      onChange: value => { transfer = value; render(); },
+      validateContext: async () => {
+        const current = await premiere.context();
+        if (current.status !== "ready" || current.sequence.projectGuid !== transferBinding.projectGuid || current.sequence.id !== transferBinding.sequenceId) throw new Error("Active Premiere sequence changed during transfer");
+        if (!bound || bound.binding.projectGuid !== transferBinding.projectGuid || bound.binding.sequenceId !== transferBinding.sequenceId || bound.binding.projectId !== transferBinding.projectId || bound.binding.workItemId !== transferBinding.workItemId) throw new Error("Plane review binding changed during transfer");
+      },
+    });
+    noticeKey = "transferReadyNotice";
+    await loadBoundReview();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") noticeKey = "transferCancelledNotice";
+    else errorKey = "transferError";
+  } finally { transferController = undefined; render(); }
+}
+function uploadSelectedMedia(): void { if (selectedMedia) void runTransfer(selectedMedia); }
+function exportAndUpload(): void { if (preparedExport) void runTransfer(signal => directExporter.export(preparedExport!, { signal })); }
+function cancelTransfer(): void { transferController?.cancel(); }
+
 async function start(): Promise<void> {
   errorKey = undefined; noticeKey = undefined; busyKey = "loading"; render();
   try {
@@ -370,6 +460,11 @@ root.addEventListener("click", event => {
   if (action === "request-unlink") requestRemoteUnlink();
   if (action === "cancel-unlink") cancelRemoteUnlink();
   if (action === "confirm-unlink") void confirmRemoteUnlink();
+  if (action === "select-media") void selectExportedMedia();
+  if (action === "prepare-export") void prepareDirectExport();
+  if (action === "upload-selected") uploadSelectedMedia();
+  if (action === "export-upload") exportAndUpload();
+  if (action === "cancel-transfer") cancelTransfer();
 });
 root.addEventListener("change", event => {
   const target = event.target as HTMLSelectElement;
@@ -384,5 +479,7 @@ root.addEventListener("input", event => {
   if (target.id === "assetQuery") assetDraft.query = target.value;
   if (target.id === "assetName") assetDraft.newAssetName = target.value;
 });
+
+window.addEventListener("unload", () => resetTransferState());
 
 void start();
