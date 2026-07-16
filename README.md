@@ -17,9 +17,9 @@ This branch intentionally replaces the original Plane-comments-only prototype. I
 
 The runtime must never use ordinary Plane comments as media-review comments, parse semantic timecodes from Plane discussion, persist a FreeFrame token, or accept a user-entered FreeFrame API URL.
 
-## Known contract/API gaps
+## Contract and host dependencies
 
-1. The current Plane review-session response contains the linked asset and short-lived integration token, but does not yet expose a browser/UXP-reachable, server-controlled FreeFrame API base URL. `ReviewSessionManager` therefore fails closed until Plane adds `freeframe_api_url` or proxies the review API.
+1. Trusted endpoint discovery is implemented in the plugin and requires Plane draft PR [AlexLite/media-plane#27](https://github.com/AlexLite/media-plane/pull/27). Plane must return a server-controlled `freeframe_api_url`; the plugin accepts only an absolute HTTPS endpoint without credentials, query, fragment, or whitespace and fails closed on missing, changed, or unsafe values.
 2. The current FreeFrame resolve endpoint toggles resolved state, so the same server-confirmed operation is used for resolve/reopen; clients must reconcile from its response.
 3. Premiere UXP 25.6 documents [`EncoderManager.exportSequence`](https://developer.adobe.com/premiere-pro/uxp/ppro-reference/classes/encodermanager) and [marker Actions](https://developer.adobe.com/premiere-pro/uxp/ppro-reference/classes/markers). Export progress/cancellation and transactional marker writes still require host smoke testing before the adapters are completed.
 4. Direct export should remain the target path. Selecting an already exported file is the compatibility fallback.
@@ -39,11 +39,10 @@ To load locally, run the build, add this repository folder in UXP Developer Tool
 
 ## Suggested next slices
 
-1. Add trusted FreeFrame endpoint discovery to the Plane contract and its fixture.
-2. Finish connection, work-item binding, asset selection/linking, and permission-aware state UI.
-3. Complete exported-file fallback and direct `EncoderManager.exportSequence` adapter with progress/cancellation smoke tests.
-4. Connect `MultipartUploader`, processing poller, version history, and terminal states.
-5. Implement marker Actions inside `Project.executeTransaction`, then verify idempotent reconciliation in Premiere.
-6. Add comment composer, server-response-driven resolve/reopen reconciliation, diagnostics, and staging smoke coverage.
+1. Finish connection, work-item binding, asset selection/linking, and permission-aware state UI.
+2. Complete exported-file fallback and direct `EncoderManager.exportSequence` adapter with progress/cancellation smoke tests.
+3. Connect `MultipartUploader`, processing poller, version history, and terminal states.
+4. Implement marker Actions inside `Project.executeTransaction`, then verify idempotent reconciliation in Premiere.
+5. Add comment composer, server-response-driven resolve/reopen reconciliation, diagnostics, and staging smoke coverage.
 
 Authoritative specification: [Plane Premiere UXP prompt](https://github.com/AlexLite/media-plane/blob/integration/freeframe-review/docs/uxp-premiere-agent-prompt.md).
