@@ -2,9 +2,21 @@
 body { margin: 0; }
 #app { padding: 16px; }
 header { border-bottom: 1px solid #4c4c4c; margin-bottom: 16px; }
-h1 { font-size: 18px; margin: 8px 0; }
-h2 { font-size: 13px; margin: 0 0 6px; }
+h1 { font-size: 18px; margin: 0 0 8px; }
+h2 { font-size: 14px; margin: 0 0 8px; }
 p { color: #bdbdbd; line-height: 1.45; margin: 0 0 12px; }
 section { background: #2e2e2e; border-radius: 4px; margin-bottom: 10px; padding: 12px; }
-.badge { background: #455a64; border-radius: 999px; display: inline-block; font-size: 11px; padding: 3px 8px; }
+label { display: block; font-weight: 600; margin: 10px 0 4px; }
+input, select, button { box-sizing: border-box; width: 100%; }
+input, select { background: #222; border: 1px solid #5a5a5a; border-radius: 4px; color: inherit; padding: 8px; }
+button { background: #3978c5; border: 0; border-radius: 4px; color: #fff; cursor: pointer; margin-top: 10px; padding: 9px; }
+button.secondary { background: #555; }
+button.danger { background: #7f3f45; }
+button:disabled, input:disabled, select:disabled { cursor: default; opacity: .55; }
+.actions { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+.hint { color: #9d9d9d; font-size: 12px; margin-top: 6px; }
+.status { color: #9ecbff; }
+.notice { color: #a9d7a9; }
 .error { color: #ff9b9b; }
+.warning { color: #ffcf70; }
+.identity strong { color: #fff; }
