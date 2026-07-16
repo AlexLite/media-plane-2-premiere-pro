@@ -24,8 +24,7 @@ export interface ReviewSession {
   integration_token: string;
   expires_in: number;
   can_manage: boolean;
-  /** Contract gap: Plane must supply this trusted value or proxy FreeFrame. */
-  freeframe_api_url?: string;
+  freeframe_api_url: string;
 }
 
 export interface UnlinkedReview { linked: false; can_manage: boolean }
