@@ -1,4 +1,5 @@
-import type { ProjectSummary, ReviewAsset, ReviewSession, ReviewSessionState, WorkItem } from "./domain";
+import type { ProjectSummary, ReviewAsset, ReviewSessionState, WorkItem } from "./domain";
+import { normalizeFreeFrameApiUrl } from "./freeframe-client";
 
 export class PlaneError extends Error {
   constructor(message: string, readonly status?: number, readonly body?: unknown) { super(message); }
@@ -9,6 +10,8 @@ function list<T>(value: unknown): T[] {
   if (value && typeof value === "object" && Array.isArray((value as { results?: unknown }).results)) return (value as { results: T[] }).results;
   throw new PlaneError("Plane returned an invalid list", 502);
 }
+function record(value: unknown): Record<string, unknown> | undefined { return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
+function nonEmptyString(value: unknown): value is string { return typeof value === "string" && value.length > 0; }
 
 export class PlaneClient {
   readonly root: string;
@@ -40,13 +43,27 @@ export class PlaneClient {
   }
 
   async getReviewSession(workspace: string, project: string, issue: string): Promise<ReviewSessionState> {
-    const body = await this.request<Record<string, unknown>>(this.reviewPath(workspace, project, issue, "session"), {}, true);
+    const body = record(await this.request<unknown>(this.reviewPath(workspace, project, issue, "session"), {}, true));
     if (body && "error" in body) {
       if (typeof body.can_manage !== "boolean") throw new PlaneError("Plane returned an invalid unlinked state", 502, body);
       return { linked: false, can_manage: body.can_manage };
     }
-    if (!body || typeof body.asset_id !== "string" || typeof body.integration_token !== "string" || typeof body.expires_in !== "number") throw new PlaneError("Plane returned an invalid review session", 502, body);
-    return { linked: true, session: body as unknown as ReviewSession };
+    if (!body || !nonEmptyString(body.asset_id) || !nonEmptyString(body.integration_token) || !Number.isInteger(body.expires_in) || (body.expires_in as number) <= 0 || typeof body.can_manage !== "boolean") {
+      throw new PlaneError("Plane returned an invalid review session", 502, body);
+    }
+    let freeframeApiUrl: string;
+    try { freeframeApiUrl = normalizeFreeFrameApiUrl(body.freeframe_api_url); }
+    catch { throw new PlaneError("Plane returned an invalid trusted FreeFrame API URL", 502, body); }
+    return {
+      linked: true,
+      session: {
+        asset_id: body.asset_id,
+        integration_token: body.integration_token,
+        expires_in: body.expires_in as number,
+        can_manage: body.can_manage,
+        freeframe_api_url: freeframeApiUrl,
+      },
+    };
   }
 
   async searchAssets(workspace: string, project: string, issue: string, query = ""): Promise<ReviewAsset[]> {
