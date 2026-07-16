@@ -4,6 +4,7 @@ import type {
   ReviewComment,
   ReviewPermissions,
   ReviewScope,
+  ReviewStream,
   ReviewVersion,
 } from "./domain";
 
@@ -105,7 +106,7 @@ function parseAsset(value: unknown): ReviewAsset {
 
 function parseVersion(value: unknown): ReviewVersion {
   const body = record(value);
-  if (!body || !uuid(body.id) || !Number.isInteger(body.version_number) || (body.version_number as number) <= 0 || !nonEmptyString(body.processing_status)) {
+  if (!body || !uuid(body.id) || !Number.isInteger(body.version_number) || (body.version_number as number) <= 0 || !nonEmptyString(body.processing_status) || !["uploading", "processing", "ready", "failed"].includes(body.processing_status)) {
     throw new FreeFrameError("FreeFrame returned an invalid review version", 502);
   }
   const createdAt = optionalString(body.created_at);
@@ -183,10 +184,27 @@ export class FreeFrameClient {
     return session;
   }
   clearSession(): void { this.accessToken = ""; }
-  async bootstrap(assetId: string, expected: ExpectedReviewContext): Promise<ReviewBootstrap> {
+  async bootstrap(assetId: string, expected: ExpectedReviewContext, signal?: AbortSignal): Promise<ReviewBootstrap> {
     if (!uuid(assetId)) throw new FreeFrameError("FreeFrame asset ID is invalid", 400);
-    const payload = await this.request<unknown>(`/integrations/plane/assets/${encodeURIComponent(assetId)}/review`);
+    const payload = await this.request<unknown>(`/integrations/plane/assets/${encodeURIComponent(assetId)}/review`, { signal });
     return parseBootstrap(payload, { ...expected, assetId });
+  }
+  async stream(assetId: string, versionId: string, signal?: AbortSignal): Promise<ReviewStream> {
+    if (!uuid(assetId) || !uuid(versionId)) throw new FreeFrameError("FreeFrame stream context is invalid", 400);
+    const payload = record(await this.request<unknown>(`/integrations/plane/assets/${encodeURIComponent(assetId)}/stream?version_id=${encodeURIComponent(versionId)}`, { signal }));
+    if (!payload || !nonEmptyString(payload.url) || !nonEmptyString(payload.asset_type) || payload.asset_type !== "video") {
+      throw new FreeFrameError("FreeFrame returned invalid playback metadata", 502);
+    }
+    const expiresIn = payload.expires_in === undefined ? 3600 : payload.expires_in;
+    if (!Number.isInteger(expiresIn) || (expiresIn as number) <= 0) throw new FreeFrameError("FreeFrame returned invalid playback metadata", 502);
+    if (payload.url.startsWith("/")) {
+      if (payload.url.startsWith("//")) throw new FreeFrameError("FreeFrame returned an unsafe playback URL", 502);
+    } else {
+      let parsed: URL;
+      try { parsed = new URL(payload.url); } catch { throw new FreeFrameError("FreeFrame returned an unsafe playback URL", 502); }
+      if (parsed.protocol !== "https:" || parsed.username || parsed.password) throw new FreeFrameError("FreeFrame returned an unsafe playback URL", 502);
+    }
+    return { url: payload.url, asset_type: payload.asset_type, expires_in: expiresIn as number };
   }
   comments(assetId: string, versionId: string): Promise<ReviewComment[]> { return this.request(`/integrations/plane/assets/${encodeURIComponent(assetId)}/versions/${encodeURIComponent(versionId)}/comments`); }
   createComment(assetId: string, versionId: string, body: { body: string; timecode_start?: number; timecode_end?: number; annotation?: { drawing_data: Record<string, unknown>; frame_number?: number } }): Promise<ReviewComment> {

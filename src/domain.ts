@@ -62,6 +62,7 @@ export interface ReviewBootstrap {
   versions: ReviewVersion[];
   permissions: ReviewPermissions;
 }
+export interface ReviewStream { url: string; asset_type: string; expires_in: number }
 
 export interface ReviewComment {
   id: string;

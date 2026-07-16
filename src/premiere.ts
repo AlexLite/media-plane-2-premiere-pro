@@ -21,6 +21,11 @@ export class PremiereAdapter {
     const context = await this.context();
     return context.status === "ready" ? context.sequence : undefined;
   }
-  supportsDirectExport(): boolean { return typeof this.api().EncoderManager?.exportSequence === "function"; }
+  supportsDirectExport(): boolean {
+    const api = this.api();
+    return typeof api.EncoderManager?.getManager === "function"
+      && typeof api.EncoderManager?.getExportFileExtension === "function"
+      && api.Constants?.ExportType?.IMMEDIATELY !== undefined;
+  }
   supportsMarkers(): boolean { return typeof this.api().Markers?.getMarkers === "function"; }
 }

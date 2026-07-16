@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --format=iife --platform=browser --target=es2020 --external:uxp --external:premierepro --outfile=dist/main.js",
+    "build": "esbuild src/main.ts --bundle --format=iife --platform=browser --target=es2020 --external:uxp --external:premierepro --external:fs --outfile=dist/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm test && npm run build"
