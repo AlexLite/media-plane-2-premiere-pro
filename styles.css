@@ -36,3 +36,26 @@ button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: de
 .comment-card.resolved { opacity: .72; }
 .comment-card p { color: #e3e3e3; margin: 0 0 8px; white-space: pre-wrap; }
 button.compact { margin-top: 0; padding: 6px 8px; width: auto; }
+.review-surface { padding: 0; overflow: hidden; }
+.review-heading { align-items: center; border-bottom: 1px solid #444; display: flex; justify-content: space-between; padding: 12px; }
+.review-heading h2, .review-heading p { margin: 0; }
+.review-version-row { align-items: end; display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); padding: 0 12px 10px; }
+.review-version-row label { margin-top: 10px; }
+.marker-controls { align-items: center; background: #282828; border-bottom: 1px solid #414141; border-top: 1px solid #414141; display: flex; justify-content: space-between; margin: 10px -12px 0; padding: 9px 12px; }
+.marker-controls > div { align-items: center; display: flex; gap: 8px; }
+.marker-summary { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 8px 0 12px; }
+.marker-summary span { color: #aeb2b8; font-size: 11px; }
+.review-pill { background: #444; border-radius: 999px; color: #d9d9d9; display: inline-block; font-size: 10px; line-height: 1; margin-left: 6px; padding: 4px 6px; vertical-align: middle; }
+.review-pill.synced { background: #315c3d; color: #c9f1d3; }
+.review-pill.marker-ready { background: #294e6d; color: #cbe7ff; }
+.review-pill.resolved-pill { background: #4b4b4b; color: #bdbdbd; }
+.comment-meta { align-items: flex-start; color: #a8a8a8; display: flex; font-size: 11px; gap: 8px; justify-content: space-between; margin-bottom: 8px; }
+.comment-meta > div { min-width: 0; }
+.comment-card { transition: border-color .12s ease, background .12s ease; }
+.comment-card:hover { background: #292929; border-color: #5a5a5a; }
+.comment-card.resolved { opacity: .72; }
+.comment-composer { background: #292929; border-radius: 4px; padding: 10px; }
+.comment-composer label { margin-top: 0; }
+@media (min-width: 520px) {
+  .review-version-row { grid-template-columns: minmax(0, 1fr); }
+}
