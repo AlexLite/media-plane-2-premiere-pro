@@ -1,25 +1,17 @@
-import type { Marker, MarkerWrite, SequenceInfo } from "./domain";
-import type { MarkerGateway } from "./markers";
+import type { SequenceInfo } from "./domain";
 declare const require: (name: string) => any;
 
-/** Thin host adapter; keep the DOM-specific API contained here. */
+/** Official Premiere UXP 25.6+ boundary. Marker/export writes stay explicit TODOs until host smoke tests. */
 export class PremiereAdapter {
-  private app(): any { return require("premierepro").app; }
-  activeSequence(): SequenceInfo | undefined {
-    const sequence = this.app().project.activeSequence; if (!sequence) return undefined;
-    // Premiere's UXP sequence API exposes ticks/timebase differently across releases.
-    const fps = Number(sequence.videoFrameRate ?? sequence.frameRate ?? 30);
-    const durationSeconds = Number(sequence.duration?.seconds ?? sequence.end?.seconds ?? 0);
-    return { id: String(sequence.sequenceID ?? sequence.id), name: sequence.name, fps, durationSeconds };
+  private api(): any { return require("premierepro"); }
+  async activeSequence(): Promise<SequenceInfo | undefined> {
+    const api = this.api(); const project = await api.Project.getActiveProject();
+    if (!project) return undefined;
+    const sequence = await project.getActiveSequence(); if (!sequence) return undefined;
+    const sequenceId = String(sequence.guid?.toString?.() ?? sequence.sequenceID ?? "");
+    if (!sequenceId) throw new Error("Premiere did not expose a stable sequence identity");
+    return { projectGuid: String(project.guid.toString()), id: sequenceId, name: String(sequence.name ?? "") };
   }
-  markers(): MarkerGateway {
-    const sequence = this.app().project.activeSequence;
-    if (!sequence) throw new Error("No active sequence");
-    const collection = sequence.markers;
-    return {
-      async list() { const output: Marker[] = []; for (const marker of collection) output.push({ id: String(marker.id ?? marker.guid), startSeconds: Number(marker.start?.seconds ?? marker.startTime?.seconds ?? 0), name: marker.name ?? "", comments: marker.comments ?? marker.comment ?? "" }); return output; },
-      async create(value: MarkerWrite) { const marker = collection.createMarker(value.startSeconds); marker.name = value.name; marker.comments = value.comments; },
-      async remove(id: string) { const marker = [...collection].find((m: any) => String(m.id ?? m.guid) === id); if (marker) collection.deleteMarker(marker); }
-    };
-  }
+  supportsDirectExport(): boolean { return typeof this.api().EncoderManager?.exportSequence === "function"; }
+  supportsMarkers(): boolean { return typeof this.api().Markers?.getMarkers === "function"; }
 }

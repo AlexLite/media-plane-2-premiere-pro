@@ -1,34 +1,49 @@
-# Plane Timecode Review for Premiere Pro
+# Plane × FreeFrame Review for Adobe Premiere Pro
 
-A UXP panel that binds the active Premiere sequence to one Plane work item. It reads the flat Plane comment stream, renders computed Plane timecodes, and reconciles only markers it owns.
+Production-oriented UXP integration scaffold for the Plane ↔ FreeFrame media-review workflow. Plane owns identity, permissions, work-item selection, and the work-item ↔ asset link. FreeFrame owns assets, versions, multipart upload, processing, review comments, and canonical frame positions.
 
-## Requirements and setup
+This branch intentionally replaces the original Plane-comments-only prototype. It is a development foundation, not a completed Marketplace package.
 
-- Adobe Premiere Pro **25.0 or later** with UXP support, and the Adobe UXP Developer Tool.
-- Node.js is required only for the local build/test commands; the shipped panel has no Node runtime dependency.
-- Run `npm install`, then `npm run build` (or keep rebuilding after changes).
-- In UXP Developer Tool, add this folder as a plugin, load it, then open **Window → Extensions → Plane Review** in Premiere.
-- Open a sequence, enter the Plane base URL, a Plane personal access token, workspace slug, project ID, and work-item ID. Validate and save. The token is held in UXP secure storage; the sequence mapping is held in UXP local storage.
+## Included architecture
 
-The manifest permits HTTPS network destinations. For a self-hosted HTTP Plane instance, change the manifest permission deliberately and use a trusted development environment.
+- `PlaneClient`: Plane PAT validation, project/work-item discovery, issue-scoped review session, asset catalog, create/link/unlink.
+- `ReviewSessionManager`: Plane-issued token exchange and in-memory-only FreeFrame session lifecycle.
+- `FreeFrameClient`: review bootstrap, version comments, comment creation/resolution, and authenticated review requests.
+- `MultipartUploader`: ordered multipart uploads, ETag capture, progress, cancellation, completion, and best-effort abort.
+- `BindingStore`: non-secret `Premiere project GUID + sequence GUID → Plane context` mapping and UXP secure storage for the Plane PAT.
+- `PremiereAdapter`: isolated Premiere UXP 25.6+ capability boundary.
+- Canonical FreeFrame marker identity and rational frame/time conversion.
+- EN/RU locale dictionaries and parity test.
 
-## Behaviour
+The runtime must never use ordinary Plane comments as media-review comments, parse semantic timecodes from Plane discussion, persist a FreeFrame token, or accept a user-entered FreeFrame API URL.
 
-- The normal Plane work-item, comment, and state endpoints are used. Reply payloads use `comment_html`; comments are never treated as nested replies.
-- `timecodes` supplied by Plane are used first. Only absent computed fields fall back to exact `<span data-plane-timecode="HH:MM:SS">` parsing.
-- Timecodes resolve by their seconds against sequence duration (Premiere owns the sequence timebase). Values outside duration remain checked and do not create a marker.
-- Checked means marker absent; unchecked means marker present. Marker metadata encodes the plugin ID, Plane comment ID, and timecode. Reconciliation therefore never removes editor markers or markers created by another plugin.
+## Known contract/API gaps
 
-## Manual test checklist
+1. The current Plane review-session response contains the linked asset and short-lived integration token, but does not yet expose a browser/UXP-reachable, server-controlled FreeFrame API base URL. `ReviewSessionManager` therefore fails closed until Plane adds `freeframe_api_url` or proxies the review API.
+2. The current FreeFrame resolve endpoint toggles resolved state, so the same server-confirmed operation is used for resolve/reopen; clients must reconcile from its response.
+3. Premiere UXP 25.6 documents [`EncoderManager.exportSequence`](https://developer.adobe.com/premiere-pro/uxp/ppro-reference/classes/encodermanager) and [marker Actions](https://developer.adobe.com/premiere-pro/uxp/ppro-reference/classes/markers). Export progress/cancellation and transactional marker writes still require host smoke testing before the adapters are completed.
+4. Direct export should remain the target path. Selecting an already exported file is the compatibility fallback.
 
-1. Open a sequence and bind it to a test Plane item; reload the panel and confirm the binding returns.
-2. Confirm token is not visible in local-storage/devtools values, then restart Premiere and confirm the connection reads it from secure storage.
-3. Add comments with multiple Plane timecodes; verify they group below their source comment and create correctly named markers at their exact seconds.
-4. Toggle each checkbox twice, refresh, and restart the panel; verify no duplicate markers result.
-5. Add a normal Premiere marker at the same time and toggle the Plane item; verify the normal marker stays.
-6. Test a timecode beyond sequence duration; verify warning, checked state, and no marker.
-7. Post a reply and change a status; verify each appears in Plane.
+## Development
 
-## Commands
+Requirements: Node.js for local tooling, Adobe Premiere Pro 25.6 or later, and UXP Developer Tool.
 
-`npm test` runs unit tests for timecode rules/fallback, marker identity, and idempotent marker reconciliation. `npm run build` emits `dist/main.js` for UXP.
+```text
+npm ci
+npm run check
+```
+
+`npm run build` emits `dist/main.js`. `dist/`, `.ccx`, UXP Developer Tool artifacts, credentials, and media exports are intentionally ignored and must not be committed.
+
+To load locally, run the build, add this repository folder in UXP Developer Tool, load it into Premiere Pro, and open **Window → Extensions → Plane × FreeFrame Review**. The current panel is an integration-status shell; continue the UI workflow against the modules in `src/`.
+
+## Suggested next slices
+
+1. Add trusted FreeFrame endpoint discovery to the Plane contract and its fixture.
+2. Finish connection, work-item binding, asset selection/linking, and permission-aware state UI.
+3. Complete exported-file fallback and direct `EncoderManager.exportSequence` adapter with progress/cancellation smoke tests.
+4. Connect `MultipartUploader`, processing poller, version history, and terminal states.
+5. Implement marker Actions inside `Project.executeTransaction`, then verify idempotent reconciliation in Premiere.
+6. Add comment composer, server-response-driven resolve/reopen reconciliation, diagnostics, and staging smoke coverage.
+
+Authoritative specification: [Plane Premiere UXP prompt](https://github.com/AlexLite/media-plane/blob/integration/freeframe-review/docs/uxp-premiere-agent-prompt.md).

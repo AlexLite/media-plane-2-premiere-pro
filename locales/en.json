@@ -1,0 +1,10 @@
+{
+  "title": "Plane × FreeFrame Review",
+  "architecture": "Plane identifies the work item; FreeFrame owns media review.",
+  "sequence": "Active sequence",
+  "noSequence": "Open a Premiere project and select a sequence.",
+  "directExport": "Direct export adapter available",
+  "fileFallback": "Use exported-file fallback until the host adapter is completed.",
+  "scaffold": "Integration scaffold",
+  "next": "Continue implementation from the clients and adapters in src/."
+}
