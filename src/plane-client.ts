@@ -1,24 +1,52 @@
-import type { ProjectSummary, ReviewAsset, ReviewSessionState, WorkItem } from "./domain";
+import type { PlaneUser, ProjectSummary, ReviewAsset, ReviewSessionState, WorkspaceSummary, WorkItem } from "./domain";
 import { normalizeFreeFrameApiUrl } from "./freeframe-client";
 
 export class PlaneError extends Error {
   constructor(message: string, readonly status?: number, readonly body?: unknown) { super(message); }
 }
 
-function list<T>(value: unknown): T[] {
-  if (Array.isArray(value)) return value as T[];
-  if (value && typeof value === "object" && Array.isArray((value as { results?: unknown }).results)) return (value as { results: T[] }).results;
+function list(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object" && Array.isArray((value as { results?: unknown }).results)) return (value as { results: unknown[] }).results;
   throw new PlaneError("Plane returned an invalid list", 502);
 }
 function record(value: unknown): Record<string, unknown> | undefined { return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
 function nonEmptyString(value: unknown): value is string { return typeof value === "string" && value.length > 0; }
+function optionalString(value: unknown): string | undefined { return typeof value === "string" && value.length > 0 ? value : undefined; }
+
+function parseUser(value: unknown): PlaneUser {
+  const body = record(value);
+  if (!body || !nonEmptyString(body.id) || !nonEmptyString(body.email)) throw new PlaneError("Plane returned an invalid user", 502, value);
+  const firstName = optionalString(body.first_name) ?? "";
+  const lastName = optionalString(body.last_name) ?? "";
+  const displayName = optionalString(body.display_name) ?? (`${firstName} ${lastName}`.trim() || body.email);
+  return { id: body.id, email: body.email, displayName };
+}
+function parseWorkspace(value: unknown): WorkspaceSummary {
+  const body = record(value);
+  if (!body || !nonEmptyString(body.id) || !nonEmptyString(body.slug) || !nonEmptyString(body.name)) throw new PlaneError("Plane returned an invalid workspace", 502, value);
+  return { id: body.id, slug: body.slug, name: body.name };
+}
+function parseProject(value: unknown): ProjectSummary {
+  const body = record(value);
+  if (!body || !nonEmptyString(body.id) || !nonEmptyString(body.name)) throw new PlaneError("Plane returned an invalid project", 502, value);
+  return { id: body.id, name: body.name, identifier: optionalString(body.identifier) };
+}
+function parseWorkItem(value: unknown): WorkItem {
+  const body = record(value);
+  if (!body || !nonEmptyString(body.id) || !nonEmptyString(body.name) || !nonEmptyString(body.identifier)) throw new PlaneError("Plane returned an invalid work item", 502, value);
+  return { id: body.id, name: body.name, identifier: body.identifier };
+}
 
 export class PlaneClient {
   readonly root: string;
   constructor(baseUrl: string, private readonly token: string) {
-    const parsed = new URL(baseUrl);
-    if (parsed.protocol !== "https:" && parsed.hostname !== "localhost") throw new PlaneError("Plane URL must use HTTPS");
-    this.root = parsed.origin + parsed.pathname.replace(/\/$/, "");
+    if (!token) throw new PlaneError("Plane token is missing", 401);
+    let parsed: URL;
+    try { parsed = new URL(baseUrl); } catch { throw new PlaneError("Plane URL is invalid"); }
+    const localHttp = parsed.protocol === "http:" && parsed.hostname === "localhost";
+    if ((parsed.protocol !== "https:" && !localHttp) || !parsed.hostname || parsed.username || parsed.password || parsed.search || parsed.hash) throw new PlaneError("Plane URL must use HTTPS");
+    this.root = parsed.origin + (parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/+$/, ""));
   }
 
   private async request<T>(path: string, init: RequestInit = {}, allow404 = false): Promise<T | undefined> {
@@ -34,9 +62,17 @@ export class PlaneClient {
     return body as T;
   }
 
-  async validate(): Promise<void> { await this.request("/api/v1/workspaces/"); }
-  async getProjects(workspace: string): Promise<ProjectSummary[]> { return list(await this.request(`/api/v1/workspaces/${encodeURIComponent(workspace)}/projects/`)); }
-  async getIssues(workspace: string, project: string): Promise<WorkItem[]> { return list(await this.request(`/api/v1/workspaces/${encodeURIComponent(workspace)}/projects/${encodeURIComponent(project)}/issues/`)); }
+  async getCurrentUser(): Promise<PlaneUser> { return parseUser(await this.request("/api/users/me/")); }
+  async getWorkspaces(): Promise<WorkspaceSummary[]> { return list(await this.request("/api/v1/workspaces/")).map(parseWorkspace); }
+  async validate(): Promise<{ user: PlaneUser; workspaces: WorkspaceSummary[] }> {
+    const [user, workspaces] = await Promise.all([this.getCurrentUser(), this.getWorkspaces()]);
+    return { user, workspaces };
+  }
+  async getProjects(workspace: string): Promise<ProjectSummary[]> { return list(await this.request(`/api/v1/workspaces/${encodeURIComponent(workspace)}/projects/`)).map(parseProject); }
+  async getIssues(workspace: string, project: string): Promise<WorkItem[]> { return list(await this.request(`/api/v1/workspaces/${encodeURIComponent(workspace)}/projects/${encodeURIComponent(project)}/issues/`)).map(parseWorkItem); }
+  async getWorkItem(workspace: string, project: string, issue: string): Promise<WorkItem> {
+    return parseWorkItem(await this.request(`/api/v1/workspaces/${encodeURIComponent(workspace)}/projects/${encodeURIComponent(project)}/issues/${encodeURIComponent(issue)}/`));
+  }
 
   private reviewPath(workspace: string, project: string, issue: string, suffix: "session" | "assets"): string {
     return `/api/workspaces/${encodeURIComponent(workspace)}/projects/${encodeURIComponent(project)}/issues/${encodeURIComponent(issue)}/freeframe-review-${suffix}/`;
@@ -68,7 +104,7 @@ export class PlaneClient {
 
   async searchAssets(workspace: string, project: string, issue: string, query = ""): Promise<ReviewAsset[]> {
     const path = `${this.reviewPath(workspace, project, issue, "assets")}?q=${encodeURIComponent(query)}&limit=50`;
-    return list(await this.request(path));
+    return list(await this.request(path)) as ReviewAsset[];
   }
   async createAsset(workspace: string, project: string, issue: string, name: string): Promise<ReviewAsset> {
     return await this.request<ReviewAsset>(this.reviewPath(workspace, project, issue, "assets"), { method: "POST", body: JSON.stringify({ name, asset_type: "video", description: null }) }) as ReviewAsset;
