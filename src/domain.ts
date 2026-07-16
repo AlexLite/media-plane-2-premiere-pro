@@ -95,5 +95,18 @@ export interface ReviewComment {
   replies: ReviewComment[];
 }
 
-export interface Marker { id: string; startSeconds: number; name: string; comments: string }
-export interface MarkerWrite { startSeconds: number; name: string; comments: string }
+export interface Marker {
+  id: string;
+  startSeconds: number;
+  durationSeconds?: number;
+  name: string;
+  comments: string;
+  markerType?: string;
+}
+export interface MarkerWrite {
+  startSeconds: number;
+  durationSeconds?: number;
+  name: string;
+  comments: string;
+  markerType?: string;
+}
