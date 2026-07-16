@@ -14,6 +14,7 @@ This branch intentionally replaces the original Plane-comments-only prototype. I
 - `PremiereAdapter`: isolated Premiere UXP 25.6+ capability boundary.
 - Canonical FreeFrame marker identity and rational frame/time conversion.
 - Connection and work-item binding UI with current-user validation, workspace/project/work-item discovery, restart restoration, and local-only disconnect.
+- Controlled unlinked state and permission-aware asset workflow: Plane-proxied catalog search, video asset creation, cross-service link confirmation, conflict handling, and confirmed remote unlink.
 - EN/RU locale dictionaries, parity coverage, and a hardcoded UI-text scanner.
 
 The runtime must never use ordinary Plane comments as media-review comments, parse semantic timecodes from Plane discussion, persist a FreeFrame token, or accept a user-entered FreeFrame API URL.
@@ -36,14 +37,13 @@ npm run check
 
 `npm run build` emits `dist/main.js`. `dist/`, `.ccx`, UXP Developer Tool artifacts, credentials, and media exports are intentionally ignored and must not be committed.
 
-To load locally, run the build, add this repository folder in UXP Developer Tool, load it into Premiere Pro, and open **Window → Extensions → Plane × FreeFrame Review**. The panel can validate Plane credentials, display the current user, select a workspace/project/work item, bind the active sequence, restore that binding after restart, and disconnect it locally without remote unlink.
+To load locally, run the build, add this repository folder in UXP Developer Tool, load it into Premiere Pro, and open **Window → Extensions → Plane × FreeFrame Review**. The panel can validate Plane credentials, display the current user, select and restore a work-item binding, show the authoritative linked/unlinked review state, search or create compatible video assets through Plane, confirm links against FreeFrame, and perform an explicitly confirmed remote unlink only with `review:manage`.
 
 ## Suggested next slices
 
-1. Add the controlled unlinked state, asset catalog search, create/link confirmation, conflict handling, and permission-aware remote unlink.
-2. Complete exported-file fallback and direct `EncoderManager.exportSequence` adapter with progress/cancellation smoke tests.
-3. Connect `MultipartUploader`, processing poller, version history, and terminal states.
-4. Implement marker Actions inside `Project.executeTransaction`, then verify idempotent reconciliation in Premiere.
-5. Add comment composer, server-response-driven resolve/reopen reconciliation, diagnostics, and staging smoke coverage.
+1. Complete exported-file fallback and direct `EncoderManager.exportSequence` adapter with progress/cancellation smoke tests.
+2. Connect `MultipartUploader`, bounded processing polling, version history, and terminal states.
+3. Implement marker Actions inside `Project.executeTransaction`, then verify idempotent reconciliation in Premiere.
+4. Add comment composer, server-response-driven resolve/reopen reconciliation, diagnostics, and staging smoke coverage.
 
 Authoritative specification: [Plane Premiere UXP prompt](https://github.com/AlexLite/media-plane/blob/integration/freeframe-review/docs/uxp-premiere-agent-prompt.md).

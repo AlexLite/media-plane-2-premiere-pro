@@ -19,4 +19,7 @@ button:disabled, input:disabled, select:disabled { cursor: default; opacity: .55
 .notice { color: #a9d7a9; }
 .error { color: #ff9b9b; }
 .warning { color: #ffcf70; }
-.identity strong { color: #fff; }
+.identity strong, section strong { color: #fff; }
+.separator { border-top: 1px solid #4c4c4c; margin: 16px 0 4px; }
+.confirmation { border: 1px solid #795e37; border-radius: 4px; margin-top: 12px; padding: 10px; }
+.confirmation p { margin-bottom: 4px; }

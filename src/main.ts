@@ -1,8 +1,17 @@
-import type { PlaneUser, PremiereContext, ProjectSummary, SequenceBinding, SequenceInfo, WorkspaceSummary, WorkItem } from "./domain";
+import {
+  compatibleVideoAssets,
+  createVideoAssetAndLink,
+  linkAssetAndConfirm,
+  loadAssetReview,
+  type AssetReviewState,
+  unlinkAssetAndConfirm,
+} from "./asset-workflow";
+import type { PlaneUser, PremiereContext, ProjectSummary, ReviewAsset, SequenceBinding, SequenceInfo, WorkspaceSummary, WorkItem } from "./domain";
 import { type MessageKey, t } from "./locale";
 import { BindingStore } from "./persistence";
-import { PlaneClient } from "./plane-client";
+import { PlaneClient, PlaneError } from "./plane-client";
 import { PremiereAdapter } from "./premiere";
+import { ReviewSessionManager } from "./review-session";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
 const store = new BindingStore();
@@ -20,12 +29,28 @@ interface ConnectionDraft {
   projectId: string;
   workItemId: string;
 }
-interface BoundState { binding: SequenceBinding; user: PlaneUser; workItem: WorkItem }
+interface BoundState {
+  binding: SequenceBinding;
+  user: PlaneUser;
+  workItem: WorkItem;
+  client: PlaneClient;
+  sessions: ReviewSessionManager;
+  review?: AssetReviewState;
+}
+interface AssetDraft {
+  query: string;
+  assets: ReviewAsset[];
+  selectedAssetId: string;
+  newAssetName: string;
+  searched: boolean;
+  confirmUnlink: boolean;
+}
 
 let context: PremiereContext = { status: "no-project" };
 let sequence: SequenceInfo | undefined;
 let bound: BoundState | undefined;
 let draft: ConnectionDraft = emptyDraft();
+let assetDraft: AssetDraft = emptyAssetDraft();
 let errorKey: MessageKey | undefined;
 let noticeKey: MessageKey | undefined;
 let busyKey: MessageKey | undefined;
@@ -41,6 +66,9 @@ function emptyDraft(binding?: SequenceBinding): ConnectionDraft {
     projectId: binding?.projectId ?? "",
     workItemId: binding?.workItemId ?? "",
   };
+}
+function emptyAssetDraft(): AssetDraft {
+  return { query: "", assets: [], selectedAssetId: "", newAssetName: sequence?.name ?? "", searched: false, confirmUnlink: false };
 }
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
 const value = (id: string): string => (root.querySelector<HTMLInputElement | HTMLSelectElement>(`#${id}`)?.value ?? "").trim();
@@ -91,6 +119,43 @@ function renderConnection(): void {
     <button data-action="validate" class="secondary"${disabled(isBusy)}>${escape(t("validateConnection"))}</button>
   </section>${feedback()}${user}${discovery}`);
 }
+function renderUnlinkedReview(review: Extract<AssetReviewState, { linked: false }>): string {
+  if (!review.canManage) {
+    return `<section><h2>${escape(t("assetLinkTitle"))}</h2><p class="warning">${escape(t("assetUnlinked"))}</p><p>${escape(t("assetManageRequired"))}</p></section>`;
+  }
+  const catalog = assetDraft.assets.length > 0 ? `<label for="assetSelect">${escape(t("existingAsset"))}</label>
+    <select id="assetSelect"${disabled(Boolean(busyKey))}>${optionList(assetDraft.assets, assetDraft.selectedAssetId, item => item.name, item => item.id, "selectAsset")}</select>
+    <button data-action="link-asset"${disabled(Boolean(busyKey) || !assetDraft.selectedAssetId)}>${escape(t("linkAsset"))}</button>` : assetDraft.searched ? `<p class="warning">${escape(t("noCompatibleAssets"))}</p>` : "";
+  return `<section><h2>${escape(t("assetLinkTitle"))}</h2><p class="warning">${escape(t("assetUnlinked"))}</p>
+    <label for="assetQuery">${escape(t("assetSearch"))}</label>
+    <input id="assetQuery" maxlength="100" value="${escape(assetDraft.query)}"${disabled(Boolean(busyKey))}>
+    <button data-action="search-assets" class="secondary"${disabled(Boolean(busyKey))}>${escape(t("searchAssets"))}</button>
+    ${catalog}
+    <div class="separator"></div>
+    <label for="assetName">${escape(t("newAssetName"))}</label>
+    <input id="assetName" maxlength="255" value="${escape(assetDraft.newAssetName)}"${disabled(Boolean(busyKey))}>
+    <button data-action="create-asset"${disabled(Boolean(busyKey) || !assetDraft.newAssetName.trim())}>${escape(t("createAndLinkAsset"))}</button>
+  </section>`;
+}
+function renderLinkedReview(review: Extract<AssetReviewState, { linked: true }>): string {
+  const currentVersion = review.versions[0];
+  const version = currentVersion
+    ? `<p><strong>${escape(t("currentVersion"))}:</strong> ${currentVersion.version_number}<br><strong>${escape(t("processingStatus"))}:</strong> ${escape(currentVersion.processing_status)}</p>`
+    : `<p class="hint">${escape(t("noVersions"))}</p>`;
+  let unlink = "";
+  if (review.permissions.manage && assetDraft.confirmUnlink) {
+    unlink = `<div class="confirmation"><p class="warning">${escape(t("confirmRemoteUnlink"))}</p><div class="actions"><button data-action="cancel-unlink" class="secondary"${disabled(Boolean(busyKey))}>${escape(t("cancel"))}</button><button data-action="confirm-unlink" class="danger"${disabled(Boolean(busyKey))}>${escape(t("confirmUnlink"))}</button></div></div>`;
+  } else if (review.permissions.manage) {
+    unlink = `<button data-action="request-unlink" class="danger"${disabled(Boolean(busyKey))}>${escape(t("unlinkRemote"))}</button><p class="hint">${escape(t("unlinkRemoteHint"))}</p>`;
+  } else {
+    unlink = `<p class="hint">${escape(t("assetManageRequired"))}</p>`;
+  }
+  return `<section><h2>${escape(t("assetLinkTitle"))}</h2><p><strong>${escape(t("linkedAsset"))}:</strong> ${escape(review.asset.name)}</p>${version}${unlink}</section>`;
+}
+function renderAssetReview(): string {
+  if (!bound?.review) return `<section><h2>${escape(t("assetLinkTitle"))}</h2><p class="warning">${escape(t("reviewUnavailable"))}</p></section>`;
+  return bound.review.linked ? renderLinkedReview(bound.review) : renderUnlinkedReview(bound.review);
+}
 function renderBound(): void {
   if (!sequence || !bound) return;
   root.innerHTML = shell(`<section><h2>${escape(t("boundTitle"))}</h2>
@@ -100,7 +165,7 @@ function renderBound(): void {
     ${feedback()}
     <div class="actions"><button data-action="refresh" class="secondary"${disabled(Boolean(busyKey))}>${escape(t("refresh"))}</button><button data-action="disconnect" class="danger"${disabled(Boolean(busyKey))}>${escape(t("disconnectLocal"))}</button></div>
     <p class="hint">${escape(t("disconnectLocalHint"))}</p>
-  </section>`);
+  </section>${renderAssetReview()}`);
 }
 function render(): void {
   if (context.status === "no-project") return renderHostMessage("noProject");
@@ -118,6 +183,14 @@ function captureForm(): void {
   if (workspaceSlug) draft.workspaceSlug = workspaceSlug;
   if (projectId) draft.projectId = projectId;
   if (workItemId) draft.workItemId = workItemId;
+}
+function captureAssetForm(): void {
+  const query = value("assetQuery");
+  const selectedAssetId = value("assetSelect");
+  const newAssetName = value("assetName");
+  if (root.querySelector("#assetQuery")) assetDraft.query = query;
+  if (root.querySelector("#assetSelect")) assetDraft.selectedAssetId = selectedAssetId;
+  if (root.querySelector("#assetName")) assetDraft.newAssetName = newAssetName;
 }
 async function tokenForDraft(): Promise<string | undefined> {
   if (draft.token) return draft.token;
@@ -166,6 +239,11 @@ async function changeProject(): Promise<void> {
   try { await loadWorkItems(); } catch { errorKey = "discoveryError"; draft.workItems = []; }
   finally { busyKey = undefined; render(); }
 }
+async function loadBoundReview(): Promise<void> {
+  if (!bound) return;
+  bound.review = await loadAssetReview(bound.binding, bound.client, bound.sessions);
+  if (bound.review.linked) assetDraft = emptyAssetDraft();
+}
 async function bindSequence(): Promise<void> {
   if (!sequence) return;
   captureForm();
@@ -177,8 +255,10 @@ async function bindSequence(): Promise<void> {
     const binding: SequenceBinding = { projectGuid: sequence.projectGuid, sequenceId: sequence.id, baseUrl: draft.baseUrl, workspaceSlug: draft.workspaceSlug, projectId: draft.projectId, workItemId: draft.workItemId };
     await store.saveToken(binding.baseUrl, token);
     store.save(binding);
-    bound = { binding, user: draft.user, workItem };
-    draft = emptyDraft();
+    const client = draft.client;
+    bound = { binding, user: draft.user, workItem, client, sessions: new ReviewSessionManager(client) };
+    draft = emptyDraft(); assetDraft = emptyAssetDraft();
+    try { await loadBoundReview(); } catch { errorKey = "reviewLoadError"; }
   } catch { errorKey = "bindingError"; }
   finally { busyKey = undefined; render(); }
 }
@@ -189,19 +269,80 @@ async function restoreBinding(binding: SequenceBinding): Promise<void> {
     if (!token) { draft = emptyDraft(binding); errorKey = "missingCredential"; return; }
     const client = new PlaneClient(binding.baseUrl, token);
     const [user, workItem] = await Promise.all([client.getCurrentUser(), client.getWorkItem(binding.workspaceSlug, binding.projectId, binding.workItemId)]);
-    bound = { binding, user, workItem };
+    bound = { binding, user, workItem, client, sessions: new ReviewSessionManager(client) };
+    assetDraft = emptyAssetDraft();
+    try { await loadBoundReview(); } catch { errorKey = "reviewLoadError"; }
   } catch { bound = undefined; draft = emptyDraft(binding); errorKey = "restoreError"; }
   finally { busyKey = undefined; render(); }
 }
 async function refreshBound(): Promise<void> {
   if (!bound) return;
-  await restoreBinding(bound.binding);
+  errorKey = undefined; noticeKey = undefined; busyKey = "loading"; render();
+  try {
+    const [user, workItem] = await Promise.all([
+      bound.client.getCurrentUser(),
+      bound.client.getWorkItem(bound.binding.workspaceSlug, bound.binding.projectId, bound.binding.workItemId),
+    ]);
+    bound.user = user; bound.workItem = workItem;
+    await loadBoundReview();
+  } catch { errorKey = "reviewLoadError"; }
+  finally { busyKey = undefined; render(); }
 }
 function disconnectLocal(): void {
   if (!bound) return;
   const binding = bound.binding;
+  bound.sessions.clear();
   store.disconnect(binding.projectGuid, binding.sequenceId);
-  bound = undefined; draft = emptyDraft(binding); errorKey = undefined; noticeKey = "localDisconnected"; busyKey = undefined; render();
+  bound = undefined; draft = emptyDraft(binding); assetDraft = emptyAssetDraft(); errorKey = undefined; noticeKey = "localDisconnected"; busyKey = undefined; render();
+}
+async function searchAssets(): Promise<void> {
+  if (!bound?.review || bound.review.linked || !bound.review.canManage) return;
+  captureAssetForm(); errorKey = undefined; noticeKey = undefined; busyKey = "searchingAssets"; render();
+  try {
+    const assets = await bound.client.searchAssets(bound.binding.workspaceSlug, bound.binding.projectId, bound.binding.workItemId, assetDraft.query);
+    assetDraft.assets = compatibleVideoAssets(assets);
+    assetDraft.searched = true;
+    assetDraft.selectedAssetId = assetDraft.assets.some(asset => asset.id === assetDraft.selectedAssetId) ? assetDraft.selectedAssetId : assetDraft.assets[0]?.id ?? "";
+  } catch { assetDraft.assets = []; assetDraft.selectedAssetId = ""; assetDraft.searched = true; errorKey = "assetCatalogError"; }
+  finally { busyKey = undefined; render(); }
+}
+async function linkSelectedAsset(): Promise<void> {
+  if (!bound?.review || bound.review.linked || !bound.review.canManage) return;
+  captureAssetForm();
+  const asset = assetDraft.assets.find(item => item.id === assetDraft.selectedAssetId);
+  if (!asset) { errorKey = "selectAssetRequired"; render(); return; }
+  errorKey = undefined; noticeKey = undefined; busyKey = "linkingAsset"; render();
+  try {
+    bound.review = await linkAssetAndConfirm(bound.binding, bound.client, bound.sessions, asset);
+    assetDraft = emptyAssetDraft(); noticeKey = "assetLinked";
+  } catch (error) { errorKey = error instanceof PlaneError && error.status === 409 ? "assetConflict" : "assetLinkError"; }
+  finally { busyKey = undefined; render(); }
+}
+async function createAndLinkAsset(): Promise<void> {
+  if (!bound?.review || bound.review.linked || !bound.review.canManage) return;
+  captureAssetForm();
+  if (!assetDraft.newAssetName) { errorKey = "assetNameRequired"; render(); return; }
+  errorKey = undefined; noticeKey = undefined; busyKey = "creatingAsset"; render();
+  try {
+    bound.review = await createVideoAssetAndLink(bound.binding, bound.client, bound.sessions, assetDraft.newAssetName);
+    assetDraft = emptyAssetDraft(); noticeKey = "assetCreatedLinked";
+  } catch (error) { errorKey = error instanceof PlaneError && error.status === 409 ? "assetConflict" : "assetCreateError"; }
+  finally { busyKey = undefined; render(); }
+}
+function requestRemoteUnlink(): void {
+  if (!bound?.review?.linked || !bound.review.permissions.manage) return;
+  assetDraft.confirmUnlink = true; errorKey = undefined; noticeKey = undefined; render();
+}
+function cancelRemoteUnlink(): void { assetDraft.confirmUnlink = false; render(); }
+async function confirmRemoteUnlink(): Promise<void> {
+  if (!bound?.review?.linked || !bound.review.permissions.manage) return;
+  const current = bound.review;
+  errorKey = undefined; noticeKey = undefined; busyKey = "unlinkingAsset"; render();
+  try {
+    bound.review = await unlinkAssetAndConfirm(bound.binding, bound.client, bound.sessions, current);
+    assetDraft = emptyAssetDraft(); noticeKey = "assetUnlinkedConfirmed";
+  } catch { errorKey = "assetUnlinkError"; assetDraft.confirmUnlink = false; }
+  finally { busyKey = undefined; render(); }
 }
 async function start(): Promise<void> {
   errorKey = undefined; noticeKey = undefined; busyKey = "loading"; render();
@@ -210,7 +351,7 @@ async function start(): Promise<void> {
     sequence = context.status === "ready" ? context.sequence : undefined;
     if (!sequence) return;
     const binding = store.get(sequence.projectGuid, sequence.id);
-    if (binding) await restoreBinding(binding); else { draft = emptyDraft(); bound = undefined; }
+    if (binding) await restoreBinding(binding); else { draft = emptyDraft(); assetDraft = emptyAssetDraft(); bound = undefined; }
   } catch { context = { status: "no-project" }; sequence = undefined; errorKey = "hostError"; }
   finally { busyKey = undefined; render(); }
 }
@@ -223,6 +364,12 @@ root.addEventListener("click", event => {
   if (action === "bind") void bindSequence();
   if (action === "refresh") void refreshBound();
   if (action === "disconnect") disconnectLocal();
+  if (action === "search-assets") void searchAssets();
+  if (action === "link-asset") void linkSelectedAsset();
+  if (action === "create-asset") void createAndLinkAsset();
+  if (action === "request-unlink") requestRemoteUnlink();
+  if (action === "cancel-unlink") cancelRemoteUnlink();
+  if (action === "confirm-unlink") void confirmRemoteUnlink();
 });
 root.addEventListener("change", event => {
   const target = event.target as HTMLSelectElement;
@@ -230,6 +377,12 @@ root.addEventListener("change", event => {
   if (target.id === "workspace") void changeWorkspace();
   if (target.id === "project") void changeProject();
   if (target.id === "workItem") draft.workItemId = target.value;
+  if (target.id === "assetSelect") assetDraft.selectedAssetId = target.value;
+});
+root.addEventListener("input", event => {
+  const target = event.target as HTMLInputElement;
+  if (target.id === "assetQuery") assetDraft.query = target.value;
+  if (target.id === "assetName") assetDraft.newAssetName = target.value;
 });
 
 void start();
