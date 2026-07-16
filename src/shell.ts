@@ -16,10 +16,10 @@ function apply(view: ShellView): void {
   active = normalizeShellView(view);
   window.localStorage.setItem(STORAGE_KEY, active);
   document.body.dataset.activeView = active;
-  for (const node of document.querySelectorAll<HTMLElement>("[data-shell-view]")) {
+  for (const node of Array.from(document.querySelectorAll<HTMLElement>("[data-shell-view]"))) {
     node.hidden = node.dataset.shellView !== active;
   }
-  for (const tab of root?.querySelectorAll<HTMLButtonElement>("[data-shell-tab]") ?? []) {
+  for (const tab of Array.from(root?.querySelectorAll<HTMLButtonElement>("[data-shell-tab]") ?? [])) {
     const selected = tab.dataset.shellTab === active;
     tab.classList.toggle("active", selected);
     tab.setAttribute("aria-selected", String(selected));
