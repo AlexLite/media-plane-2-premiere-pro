@@ -116,7 +116,7 @@ function parseAnnotation(value: unknown, commentId: string): ReviewCommentAnnota
   if (!body || !uuid(body.id) || body.comment_id !== commentId || !drawing || frameNumber === undefined || carouselPosition === undefined) throw new FreeFrameError("FreeFrame returned an invalid comment annotation", 502);
   return { id: body.id, comment_id: commentId, drawing_data: drawing, frame_number: frameNumber, carousel_position: carouselPosition };
 }
-function parseComment(value: unknown, expectedAssetId: string, expectedVersionId: string): ReviewComment {
+export function parseComment(value: unknown, expectedAssetId: string, expectedVersionId: string): ReviewComment {
   const body = record(value);
   if (!body || !uuid(body.id) || body.asset_id !== expectedAssetId || body.version_id !== expectedVersionId) throw new FreeFrameError("FreeFrame returned a mismatched review comment", 403);
   const parentId = nullableUuid(body.parent_id), authorId = nullableUuid(body.author_id), guestAuthorId = nullableUuid(body.guest_author_id), start = nullableFiniteNonNegative(body.timecode_start), end = nullableFiniteNonNegative(body.timecode_end);

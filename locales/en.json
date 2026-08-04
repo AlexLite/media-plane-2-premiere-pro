@@ -6,6 +6,8 @@
   "noSequence": "Select an active sequence in Premiere to continue.",
   "connectionTitle": "Connect Plane",
   "connectionIntro": "Validate a Plane personal access token, then choose the work item for this sequence.",
+  "connectionSettingsIntro": "Configure your Plane server and API token once in User settings, then return here to bind the active sequence.",
+  "openSettings": "Open user settings",
   "planeUrl": "Plane URL",
   "planePat": "Plane personal access token",
   "planePatHint": "Stored only in UXP secure storage after the binding is confirmed. Leave blank to reuse a saved token for this Plane URL.",

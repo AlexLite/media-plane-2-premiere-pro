@@ -149,9 +149,9 @@ describe("sequence binding and secure credential boundary", () => {
 
   it("stores the Plane PAT only through UXP secure storage", async () => {
     const store = new BindingStore(storageRuntime);
-    await store.saveToken("https://plane.test", "plane-pat-secret");
+    await store.saveToken("https://plane.test", "plane-pat-secret-тест-🔐");
     expect(secureStorage.setItem).toHaveBeenCalledTimes(1);
     expect([...values.values()].join("\n")).not.toContain("plane-pat-secret");
-    await expect(store.getToken("https://plane.test")).resolves.toBe("plane-pat-secret");
+    await expect(store.getToken("https://plane.test")).resolves.toBe("plane-pat-secret-тест-🔐");
   });
 });

@@ -6,8 +6,10 @@ import {
   type AssetReviewState,
   unlinkAssetAndConfirm,
 } from "./asset-workflow";
+import { ACTIVE_CONTEXT_EVENT } from "./active-context";
 import type { PlaneUser, PremiereContext, ProjectSummary, ReviewAsset, SequenceBinding, SequenceInfo, WorkspaceSummary, WorkItem } from "./domain";
 import { type MessageKey, t } from "./locale";
+import { INTERFACE_LOCALE_EVENT } from "./locale-preference";
 import { BindingStore } from "./persistence";
 import { PlaneClient, PlaneError } from "./plane-client";
 import { PremiereAdapter } from "./premiere";
@@ -15,6 +17,7 @@ import { PremiereDirectExporter, type PreparedDirectExport } from "./premiere-ex
 import { ReviewSessionManager } from "./review-session";
 import { ReviewUploadController, type TransferSnapshot } from "./upload-controller";
 import { UxpMediaFiles, type SelectedMediaFile } from "./uxp-media";
+import { requestShellView, USER_CONFIG_EVENT } from "./shell-events";
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
 const store = new BindingStore();
@@ -66,7 +69,7 @@ let transferController: ReviewUploadController | undefined;
 
 function emptyDraft(binding?: SequenceBinding): ConnectionDraft {
   return {
-    baseUrl: binding?.baseUrl ?? "",
+    baseUrl: binding?.baseUrl ?? store.getPlaneUrl(),
     token: "",
     workspaces: [],
     projects: [],
@@ -137,14 +140,8 @@ function renderConnection(): void {
     <button data-action="bind"${disabled(isBusy || !draft.workspaceSlug || !draft.projectId || !draft.workItemId)}>${escape(t("bindSequence"))}</button>
   </section>` : "";
 
-  root.innerHTML = shell(`<section><h2>${escape(t("connectionTitle"))}</h2><p>${escape(t("connectionIntro"))}</p><p><strong>${escape(t("sequence"))}:</strong> ${escape(sequence.name)}</p>
-    <label for="baseUrl">${escape(t("planeUrl"))}</label>
-    <input id="baseUrl" type="url" value="${escape(draft.baseUrl)}"${disabled(isBusy)}>
-    <label for="token">${escape(t("planePat"))}</label>
-    <input id="token" type="password" autocomplete="off"${disabled(isBusy)}>
-    <p class="hint">${escape(t("planePatHint"))}</p>
-    <button data-action="validate" class="secondary"${disabled(isBusy)}>${escape(t("validateConnection"))}</button>
-  </section>${feedback()}${user}${discovery}`);
+  const connection = draft.user ? "" : `<section class="connection-prompt"><h2>${escape(t("connectionTitle"))}</h2><p>${escape(t("connectionSettingsIntro"))}</p><button data-action="open-settings"${disabled(isBusy)}>${escape(t("openSettings"))}</button></section>`;
+  root.innerHTML = shell(`${connection}${feedback()}${user}${discovery}`);
 }
 function renderUnlinkedReview(review: Extract<AssetReviewState, { linked: false }>): string {
   if (!review.canManage) {
@@ -216,10 +213,6 @@ function render(): void {
   if (bound) renderBound(); else renderConnection();
 }
 function captureForm(): void {
-  const baseUrl = value("baseUrl");
-  const token = value("token");
-  if (baseUrl) draft.baseUrl = baseUrl;
-  if (token) draft.token = token;
   const workspaceSlug = value("workspace");
   const projectId = value("project");
   const workItemId = value("workItem");
@@ -441,7 +434,10 @@ async function start(): Promise<void> {
     sequence = context.status === "ready" ? context.sequence : undefined;
     if (!sequence) return;
     const binding = store.get(sequence.projectGuid, sequence.id);
-    if (binding) await restoreBinding(binding); else { draft = emptyDraft(); assetDraft = emptyAssetDraft(); bound = undefined; }
+    if (binding) await restoreBinding(binding); else {
+      draft = emptyDraft(); assetDraft = emptyAssetDraft(); bound = undefined;
+      if (draft.baseUrl && await store.getToken(draft.baseUrl)) await validateConnection();
+    }
   } catch { context = { status: "no-project" }; sequence = undefined; errorKey = "hostError"; }
   finally { busyKey = undefined; render(); }
 }
@@ -451,6 +447,7 @@ root.addEventListener("click", event => {
   const action = target.dataset.action;
   if (!action || busyKey) return;
   if (action === "validate") void validateConnection();
+  if (action === "open-settings") requestShellView("settings");
   if (action === "bind") void bindSequence();
   if (action === "refresh") void refreshBound();
   if (action === "disconnect") disconnectLocal();
@@ -481,5 +478,8 @@ root.addEventListener("input", event => {
 });
 
 window.addEventListener("unload", () => resetTransferState());
+window.addEventListener(INTERFACE_LOCALE_EVENT, () => { captureForm(); captureAssetForm(); render(); });
+window.addEventListener(ACTIVE_CONTEXT_EVENT, () => { resetTransferState(); void start(); });
+window.addEventListener(USER_CONFIG_EVENT, event => { if ((event as CustomEvent<unknown>).detail === "plane") void start(); });
 
 void start();

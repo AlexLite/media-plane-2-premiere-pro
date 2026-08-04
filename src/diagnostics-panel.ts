@@ -1,5 +1,7 @@
+import { ACTIVE_CONTEXT_EVENT } from "./active-context";
 import { collectDiagnostics, diagnosticReportText, type DiagnosticCheckId, type DiagnosticGroup, type DiagnosticReport, type DiagnosticStatus } from "./diagnostics";
 import { normalizeShellView, SHELL_VIEW_EVENT } from "./shell-events";
+import { INTERFACE_LOCALE_EVENT } from "./locale-preference";
 import { st, type ShellMessageKey } from "./shell-locale";
 
 const root = document.querySelector<HTMLDivElement>("#diagnostics-app");
@@ -103,6 +105,8 @@ window.addEventListener(SHELL_VIEW_EVENT, event => {
     void run();
   }
 });
+window.addEventListener(INTERFACE_LOCALE_EVENT, render);
+window.addEventListener(ACTIVE_CONTEXT_EVENT, () => { if (started) void run(); });
 
 render();
 if (document.body.dataset.activeView === "diagnostics") { started = true; void run(); }

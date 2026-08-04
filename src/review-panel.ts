@@ -1,6 +1,8 @@
+import { ACTIVE_CONTEXT_EVENT } from "./active-context";
 import { loadAssetReview, type AssetReviewState } from "./asset-workflow";
 import type { ReviewVersion, SequenceBinding, SequenceInfo, WorkItem } from "./domain";
 import { type MessageKey, t } from "./locale";
+import { INTERFACE_LOCALE_EVENT } from "./locale-preference";
 import { BindingStore } from "./persistence";
 import { PlaneClient } from "./plane-client";
 import { PremiereAdapter } from "./premiere";
@@ -251,4 +253,6 @@ root?.addEventListener("input", event => {
   if (target.id === "reviewCommentBody") state.body = target.value;
 });
 window.addEventListener("unload", () => { request?.abort(); state.sessions?.clear(); });
+window.addEventListener(INTERFACE_LOCALE_EVENT, render);
+window.addEventListener(ACTIVE_CONTEXT_EVENT, () => void start());
 void start();
