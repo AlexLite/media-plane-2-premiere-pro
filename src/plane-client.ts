@@ -1,4 +1,5 @@
 import type { PlaneUser, ProjectSummary, ReviewAsset, ReviewSessionState, WorkspaceSummary, WorkItem } from "./domain";
+import { fetchWithTimeout } from "./fetch-with-timeout";
 import { normalizeFreeFrameApiUrl } from "./freeframe-client";
 
 export class PlaneError extends Error {
@@ -69,7 +70,7 @@ export class PlaneClient {
   }
 
   private async request<T>(path: string, init: RequestInit = {}, allow404 = false): Promise<T | undefined> {
-    const response = await fetch(`${this.root}${path}`, {
+    const response = await fetchWithTimeout(`${this.root}${path}`, {
       ...init,
       headers: { "X-API-Key": this.token, Accept: "application/json", ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },
     });

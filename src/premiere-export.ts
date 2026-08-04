@@ -1,14 +1,4 @@
-import { mediaMimeType, UxpMediaFiles, type SelectedMediaFile } from "./uxp-media";
-
-declare const require: (name: string) => any;
-
-interface UxpFileEntry {
-  isFile?: boolean;
-  name: string;
-  nativePath: string;
-  getMetadata(): Promise<{ size: number; isFile?: boolean }>;
-  read(options: { format: unknown }): Promise<string | ArrayBuffer>;
-}
+import type { SelectedMediaFile } from "./uxp-media";
 
 export interface PreparedDirectExport {
   readonly projectGuid: string;
@@ -17,112 +7,25 @@ export interface PreparedDirectExport {
   readonly outputName: string;
   readonly outputPath: string;
   readonly extension: string;
-  readonly _preset: UxpFileEntry;
-  readonly _output: UxpFileEntry;
 }
-export interface DirectExportOptions {
-  signal?: AbortSignal;
-  maxOutputChecks?: number;
-  outputCheckDelayMs?: number;
-  sleep?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
-}
-
-function abortError(): DOMException { return new DOMException("Premiere export cancelled", "AbortError"); }
-function safeName(value: string): string { return value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim().slice(0, 120) || "premiere-export"; }
-function sleep(delayMs: number, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) return Promise.reject(abortError());
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, delayMs);
-    signal?.addEventListener("abort", () => { clearTimeout(timer); reject(abortError()); }, { once: true });
-  });
-}
+export interface DirectExportOptions { signal?: AbortSignal }
 
 /**
- * Official Premiere UXP 25.6 export boundary.
- * EncoderManager documents render events but not the subscription/cancel mechanism.
- * Until host smoke testing confirms that mechanism, cancellation stops local waiting/upload only;
- * it does not claim to cancel a render already accepted by Premiere/AME.
+ * Fail-closed boundary for Premiere/AME direct export.
+ *
+ * Premiere UXP 25.6 exposes export submission, but this integration does not
+ * yet have a host-verified completion/error event and render cancellation
+ * contract. File-size stability is not a safe completion signal. Keep direct
+ * export unavailable until that contract is implemented and smoke-tested;
+ * users can upload a file exported by Premiere in the meantime.
  */
 export class PremiereDirectExporter {
-  private readonly media: UxpMediaFiles;
-  constructor(
-    private readonly premiereRuntime: () => any = () => require("premierepro"),
-    private readonly uxpRuntime: () => any = () => require("uxp"),
-  ) { this.media = new UxpMediaFiles(uxpRuntime); }
-
-  supports(): boolean {
-    const api = this.premiereRuntime();
-    return typeof api.EncoderManager?.getManager === "function"
-      && typeof api.EncoderManager?.getExportFileExtension === "function"
-      && api.Constants?.ExportType?.IMMEDIATELY !== undefined;
+  constructor(..._unused: unknown[]) {}
+  supports(): false { return false; }
+  async prepare(_projectGuid: string, _sequenceId: string, _sequenceName: string): Promise<PreparedDirectExport | undefined> {
+    throw new Error("Direct Premiere export is disabled until host completion events are verified");
   }
-
-  private async sequence(expectedProjectGuid: string, expectedSequenceId: string): Promise<any> {
-    const api = this.premiereRuntime();
-    const project = await api.Project.getActiveProject();
-    if (!project || String(project.guid?.toString?.() ?? "") !== expectedProjectGuid) throw new Error("The active Premiere project changed before export");
-    const sequence = await project.getActiveSequence();
-    const sequenceId = String(sequence?.guid?.toString?.() ?? sequence?.sequenceID ?? "");
-    if (!sequence || sequenceId !== expectedSequenceId) throw new Error("The active Premiere sequence changed before export");
-    return sequence;
-  }
-
-  private storage(): any {
-    const localFileSystem = this.uxpRuntime().storage?.localFileSystem;
-    if (!localFileSystem) throw new Error("UXP local file access is unavailable");
-    return localFileSystem;
-  }
-
-  async prepare(projectGuid: string, sequenceId: string, sequenceName: string): Promise<PreparedDirectExport | undefined> {
-    if (!this.supports()) throw new Error("Direct Premiere export is unavailable in this host");
-    const sequence = await this.sequence(projectGuid, sequenceId);
-    const fs = this.storage();
-    const preset = await fs.getFileForOpening({ allowMultiple: false, types: ["epr"] }) as UxpFileEntry | null;
-    if (!preset) return undefined;
-    const api = this.premiereRuntime();
-    const extensionValue = await api.EncoderManager.getExportFileExtension(sequence, preset.nativePath);
-    const extension = String(extensionValue ?? "").replace(/^\./, "").toLowerCase();
-    if (!/^[a-z0-9]{1,10}$/.test(extension)) throw new Error("Premiere returned an invalid export file extension");
-    mediaMimeType(`export.${extension}`);
-    const output = await fs.getFileForSaving(`${safeName(sequenceName)}.${extension}`, { types: [extension] }) as UxpFileEntry | null;
-    if (!output) return undefined;
-    mediaMimeType(output.name);
-    return { projectGuid, sequenceId, presetName: preset.name, outputName: output.name, outputPath: output.nativePath, extension, _preset: preset, _output: output };
-  }
-
-  async export(prepared: PreparedDirectExport, options: DirectExportOptions = {}): Promise<SelectedMediaFile> {
-    if (options.signal?.aborted) throw abortError();
-    const api = this.premiereRuntime();
-    const sequence = await this.sequence(prepared.projectGuid, prepared.sequenceId);
-    const manager = api.EncoderManager.getManager();
-    if (!manager || manager.isAMEInstalled === false || typeof manager.exportSequence !== "function") throw new Error("Adobe Media Encoder is unavailable");
-    const accepted = await manager.exportSequence(
-      sequence,
-      api.Constants.ExportType.IMMEDIATELY,
-      prepared._output.nativePath,
-      prepared._preset.nativePath,
-      true,
-    );
-    if (!accepted) throw new Error("Premiere rejected the export request");
-    if (options.signal?.aborted) throw abortError();
-
-    const maxChecks = options.maxOutputChecks ?? 120;
-    const delayMs = options.outputCheckDelayMs ?? 1000;
-    const wait = options.sleep ?? sleep;
-    if (!Number.isInteger(maxChecks) || maxChecks < 2 || !Number.isFinite(delayMs) || delayMs < 0) throw new Error("Invalid export wait configuration");
-    let previousSize = -1;
-    let stableChecks = 0;
-    for (let check = 0; check < maxChecks; check++) {
-      if (options.signal?.aborted) throw abortError();
-      const metadata = await prepared._output.getMetadata();
-      const size = Number(metadata.size);
-      if (Number.isFinite(size) && size > 0) {
-        stableChecks = size === previousSize ? stableChecks + 1 : 0;
-        previousSize = size;
-        if (stableChecks >= 1) return this.media.read(prepared._output, "exported", options.signal);
-      }
-      await wait(delayMs, options.signal);
-    }
-    throw new Error("Premiere export output did not become ready in time");
+  async export(_prepared: PreparedDirectExport, _options: DirectExportOptions = {}): Promise<SelectedMediaFile> {
+    throw new Error("Direct Premiere export is disabled until host completion events are verified");
   }
 }

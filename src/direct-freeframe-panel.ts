@@ -1,15 +1,18 @@
 import type { ReviewComment } from "./domain";
-import { DirectFreeFrameClient, type DirectAsset, type DirectProject, type DirectUser, type DirectVersion } from "./direct-freeframe-client";
+import { DirectFreeFrameClient, directReviewVersion, type DirectAsset, type DirectProject, type DirectUser, type DirectVersion } from "./direct-freeframe-client";
 import { dt } from "./direct-locale";
 import { normalizeFreeFrameApiUrl } from "./freeframe-client";
 import { INTERFACE_LOCALE_EVENT } from "./locale-preference";
+import { OperationGeneration } from "./operation-generation";
 import { DirectFreeFrameStore } from "./persistence";
 import { PremiereAdapter } from "./premiere";
+import { createCommentAtPlayhead } from "./review-comments";
 import { normalizeShellMode, normalizeShellView, requestShellView, SHELL_MODE_EVENT, SHELL_VIEW_EVENT, USER_CONFIG_EVENT, type ShellMode, type ShellView } from "./shell-events";
 
 const root = document.querySelector<HTMLDivElement>("#direct-freeframe-app");
 const store = new DirectFreeFrameStore();
 const premiere = new PremiereAdapter();
+const operations = new OperationGeneration();
 let mode: ShellMode = normalizeShellMode(document.body.dataset.activeMode);
 let view: ShellView = normalizeShellView(document.body.dataset.activeView);
 let client: DirectFreeFrameClient | undefined;
@@ -23,11 +26,18 @@ let selectedProject = "";
 let selectedAsset = "";
 let selectedVersion = "";
 let busy = false;
-let restoring = false;
 let error = "";
 
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
 const option = (value: string, label: string, selected: string) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(label)}</option>`;
+
+function createClient(url: string): DirectFreeFrameClient {
+  return new DirectFreeFrameClient(url, {
+    getRefreshToken: () => store.getRefreshToken(url),
+    onTokens: tokens => store.saveRefreshToken(url, tokens.refresh_token),
+    onSessionExpired: async () => { await store.clearRefreshToken(url); currentUser = undefined; },
+  });
+}
 
 function connectionForm(): string {
   return `<section class="direct-card direct-empty"><div class="direct-empty-icon">FF</div><h2>${escape(dt("title"))}</h2><p>${escape(dt("loginRequired"))}</p><button class="compact" data-direct-action="settings">${escape(dt("openSettings"))}</button>${error ? `<p class="error">${escape(error)}</p>` : ""}</section>`;
@@ -39,7 +49,7 @@ function selectors(): string {
 
 function review(): string {
   if (!currentUser) return connectionForm();
-  const list = comments.length ? comments.map(comment => `<div class="comment-card${comment.resolved ? " resolved" : ""}"><div class="comment-meta"><span>${escape(comment.author?.name ?? comment.guest_author?.name ?? "FreeFrame")}${comment.timecode_start === null ? "" : ` · ${comment.timecode_start.toFixed(2)}s`}</span><button class="compact secondary" data-direct-resolve="${escape(comment.id)}">${escape(dt("resolve"))}</button></div><p>${escape(comment.body)}</p></div>`).join("") : `<p class="hint">${escape(dt("noComments"))}</p>`;
+  const list = comments.length ? comments.map(comment => `<div class="comment-card${comment.resolved ? " resolved" : ""}"><div class="comment-meta"><span>${escape(comment.author?.name ?? comment.guest_author?.name ?? "FreeFrame")}${comment.timecode_start === null ? "" : ` · ${comment.timecode_start.toFixed(2)}s`}</span><button class="compact secondary" data-direct-resolve="${escape(comment.id)}">${escape(dt(comment.resolved ? "reopen" : "resolve"))}</button></div><p>${escape(comment.body)}</p></div>`).join("") : `<p class="hint">${escape(dt("noComments"))}</p>`;
   return `${selectors()}<section class="direct-card"><h2>${escape(dt("reviewTitle"))}</h2>${selectedVersion ? `<div class="comment-composer"><label for="directComment">${escape(dt("comment"))}</label><textarea id="directComment" placeholder="${escape(dt("commentPlaceholder"))}"></textarea><button data-direct-action="comment"${busy ? " disabled" : ""}>${escape(dt("addComment"))}</button></div><div class="comment-list">${list}</div>` : `<p>${escape(dt("selectVersion"))}</p>`}</section>`;
 }
 
@@ -57,46 +67,56 @@ function render(): void {
 
 function fail(): void { error = dt("requestFailed"); }
 
-async function loadComments(): Promise<void> {
-  comments = client && selectedAsset && selectedVersion ? await client.comments(selectedAsset, selectedVersion) : [];
+async function loadComments(generation: number): Promise<void> {
+  const next = client && selectedAsset && selectedVersion ? await client.comments(selectedAsset, selectedVersion) : [];
+  operations.assertCurrent(generation); comments = next;
 }
-async function loadVersions(): Promise<void> {
-  versions = client && selectedAsset ? await client.versions(selectedAsset) : [];
+async function loadVersions(generation: number): Promise<void> {
+  const next = client && selectedAsset ? await client.versions(selectedAsset) : [];
+  operations.assertCurrent(generation); versions = next;
   if (!versions.some(item => item.id === selectedVersion)) selectedVersion = versions[0]?.id ?? "";
-  await loadComments();
+  await loadComments(generation);
 }
-async function loadAssets(): Promise<void> {
-  assets = client && selectedProject ? await client.assets(selectedProject) : [];
+async function loadAssets(generation: number): Promise<void> {
+  const next = client && selectedProject ? await client.assets(selectedProject) : [];
+  operations.assertCurrent(generation); assets = next;
   if (!assets.some(item => item.id === selectedAsset)) selectedAsset = "";
-  await loadVersions();
+  await loadVersions(generation);
 }
-async function loadProjects(): Promise<void> {
+async function loadProjects(generation: number): Promise<void> {
   if (!client) return;
-  projects = await client.projects();
+  const next = await client.projects();
+  operations.assertCurrent(generation); projects = next;
   if (!projects.some(item => item.id === selectedProject)) selectedProject = "";
-  await loadAssets();
+  await loadAssets(generation);
 }
-async function establish(nextClient: DirectFreeFrameClient, refreshToken: string): Promise<void> {
+async function establish(nextClient: DirectFreeFrameClient, refreshToken: string, generation: number): Promise<void> {
+  operations.assertCurrent(generation);
   client = nextClient;
   await store.saveRefreshToken(nextClient.root, refreshToken);
-  currentUser = await nextClient.me();
-  await loadProjects();
+  operations.assertCurrent(generation);
+  const user = await nextClient.me();
+  operations.assertCurrent(generation); currentUser = user;
+  await loadProjects(generation);
 }
 async function restore(): Promise<void> {
-  if (restoring || currentUser || !currentUrl || mode !== "freeframe") return;
-  restoring = true;
+  if (currentUser || !currentUrl || mode !== "freeframe") return;
+  const generation = operations.begin();
   try {
     const normalized = normalizeFreeFrameApiUrl(currentUrl);
     const refreshToken = await store.getRefreshToken(normalized);
+    operations.assertCurrent(generation);
     if (!refreshToken) return;
-    const nextClient = new DirectFreeFrameClient(normalized);
+    const nextClient = createClient(normalized);
     const renewed = await nextClient.refresh(refreshToken);
-    await establish(nextClient, renewed.refresh_token);
-  } catch { client = undefined; currentUser = undefined; }
-  finally { restoring = false; render(); }
+    operations.assertCurrent(generation);
+    await establish(nextClient, renewed.refresh_token, generation);
+  } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) { client = undefined; currentUser = undefined; } }
+  finally { if (operations.current(generation)) render(); }
 }
 
 async function logout(): Promise<void> {
+  operations.begin();
   if (currentUrl) await store.clearRefreshToken(currentUrl);
   client?.clearSession(); client = undefined; currentUser = undefined; projects = []; assets = []; versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; error = ""; render();
 }
@@ -104,31 +124,35 @@ async function logout(): Promise<void> {
 async function comment(): Promise<void> {
   const body = root?.querySelector<HTMLTextAreaElement>("#directComment")?.value.trim() ?? "";
   if (!client || !selectedAsset || !selectedVersion || !body) return;
-  busy = true; error = ""; render();
+  const generation = operations.begin(); busy = true; error = ""; render();
   try {
     const context = await premiere.context();
+    operations.assertCurrent(generation);
     if (context.status !== "ready") throw new Error("No active Premiere sequence");
     const playhead = await premiere.playhead(context.sequence.projectGuid, context.sequence.id);
-    await client.createComment(selectedAsset, selectedVersion, { body, timecode_start: playhead.seconds });
-    await loadComments();
-  } catch { fail(); }
-  finally { busy = false; render(); }
+    operations.assertCurrent(generation);
+    const version = versions.find(item => item.id === selectedVersion);
+    if (!version) throw new Error("No selected FreeFrame version");
+    await createCommentAtPlayhead(client, selectedAsset, directReviewVersion(version), body, playhead.seconds, playhead.sequenceDurationSeconds ?? context.sequence.durationSeconds);
+    operations.assertCurrent(generation); await loadComments(generation);
+  } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); }
+  finally { if (operations.current(generation)) { busy = false; render(); } }
 }
 
 root?.addEventListener("click", event => {
   const action = (event.target as HTMLElement).closest<HTMLElement>("[data-direct-action]")?.dataset.directAction;
   if (action === "settings") requestShellView("settings");
   if (action === "logout") void logout();
-  if (action === "refresh") void (async () => { busy = true; error = ""; render(); try { await loadProjects(); } catch { fail(); } finally { busy = false; render(); } })();
+  if (action === "refresh") void (async () => { const generation = operations.begin(); busy = true; error = ""; render(); try { await loadProjects(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })();
   if (action === "comment") void comment();
   const commentId = (event.target as HTMLElement).closest<HTMLElement>("[data-direct-resolve]")?.dataset.directResolve;
-  if (commentId && client) void (async () => { try { await client!.toggleResolved(selectedAsset, selectedVersion, commentId); await loadComments(); } catch { fail(); } render(); })();
+  if (commentId && client) void (async () => { const generation = operations.begin(); try { await client!.toggleResolved(selectedAsset, selectedVersion, commentId); operations.assertCurrent(generation); await loadComments(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } if (operations.current(generation)) render(); })();
 });
 root?.addEventListener("change", event => {
   const target = event.target as HTMLSelectElement;
-  if (target.id === "directProject") { selectedProject = target.value; selectedAsset = ""; selectedVersion = ""; void (async () => { busy = true; render(); try { await loadAssets(); } catch { fail(); } finally { busy = false; render(); } })(); }
-  if (target.id === "directAsset") { selectedAsset = target.value; selectedVersion = ""; void (async () => { busy = true; render(); try { await loadVersions(); } catch { fail(); } finally { busy = false; render(); } })(); }
-  if (target.id === "directVersion") { selectedVersion = target.value; void (async () => { busy = true; render(); try { await loadComments(); } catch { fail(); } finally { busy = false; render(); } })(); }
+  if (target.id === "directProject") { const generation = operations.begin(); selectedProject = target.value; selectedAsset = ""; selectedVersion = ""; void (async () => { busy = true; render(); try { await loadAssets(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })(); }
+  if (target.id === "directAsset") { const generation = operations.begin(); selectedAsset = target.value; selectedVersion = ""; void (async () => { busy = true; render(); try { await loadVersions(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })(); }
+  if (target.id === "directVersion") { const generation = operations.begin(); selectedVersion = target.value; void (async () => { busy = true; render(); try { await loadComments(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })(); }
 });
 window.addEventListener(SHELL_MODE_EVENT, event => { mode = normalizeShellMode((event as CustomEvent<unknown>).detail); if (mode === "freeframe") void restore(); });
 window.addEventListener(SHELL_VIEW_EVENT, event => { view = normalizeShellView((event as CustomEvent<unknown>).detail); render(); });

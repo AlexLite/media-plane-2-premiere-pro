@@ -1,4 +1,5 @@
 import { FreeFrameClient } from "./freeframe-client";
+import { fetchWithTimeout } from "./fetch-with-timeout";
 
 export interface UploadFile { name: string; type: string; size: number; slice(start: number, end: number, signal?: AbortSignal): Blob | Promise<Blob> }
 interface Initiation { upload_id: string; s3_key: string; asset_id: string; version_id: string }
@@ -47,7 +48,7 @@ export class MultipartUploader {
         const body = await file.slice((part - 1) * this.chunkSize, Math.min(part * this.chunkSize, file.size), options.signal);
         if (options.signal?.aborted) throw abortError();
         await options.validateContext?.();
-        const response = await fetch(presignedUrl, { method: "PUT", body, signal: options.signal });
+        const response = await fetchWithTimeout(presignedUrl, { method: "PUT", body, signal: options.signal }, 120_000);
         const etag = response.headers.get("ETag")?.trim();
         if (!response.ok || !etag) throw new Error(`Upload part ${part} failed`);
         parts.push({ PartNumber: part, ETag: etag });

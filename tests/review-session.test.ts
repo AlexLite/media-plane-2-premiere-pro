@@ -87,6 +87,22 @@ describe("trusted Plane and FreeFrame session contracts", () => {
 });
 
 describe("review session lifecycle", () => {
+  it("ignores a late session response for a superseded review context", async () => {
+    const otherIssue = "77777777-7777-4777-8777-777777777777";
+    let resolveOld!: (value: any) => void;
+    const oldState = new Promise(resolve => { resolveOld = resolve; });
+    const plane = { getReviewSession: vi.fn()
+      .mockImplementationOnce(() => oldState)
+      .mockResolvedValueOnce({ linked: true, session: planeReviewSessionFixture }) };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => JSON.stringify({ ...freeFrameSessionFixture, context: { ...freeFrameSessionFixture.context, issue_id: otherIssue } }) }));
+    const manager = new ReviewSessionManager(plane as any);
+    const oldRequest = manager.get(binding);
+    const currentRequest = manager.get({ ...binding, workItemId: otherIssue });
+    await expect(currentRequest).resolves.toMatchObject({ contextKey: expect.any(String) });
+    resolveOld({ linked: true, session: planeReviewSessionFixture });
+    await expect(oldRequest).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("renews through Plane after expiry and keeps the FreeFrame token in memory", async () => {
     let now = 1_000;
     const plane = { getReviewSession: vi.fn().mockResolvedValue({ linked: true, session: { ...planeReviewSessionFixture, expires_in: 10 } }) };

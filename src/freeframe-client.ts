@@ -10,6 +10,7 @@ import type {
   ReviewStream,
   ReviewVersion,
 } from "./domain";
+import { fetchWithTimeout } from "./fetch-with-timeout";
 
 export class FreeFrameError extends Error { constructor(message: string, readonly status?: number) { super(message); } }
 export interface FreeFrameReviewContext { workspace_id: string; project_id: string; issue_id: string }
@@ -136,8 +137,8 @@ export class FreeFrameClient {
   readonly origin: string;
   constructor(root: string) { this.root = normalizeFreeFrameApiUrl(root); this.origin = new URL(this.root).origin; }
   private async parse<T>(response: Response): Promise<T> { const text = await response.text(); let body: unknown; if (text) { try { body = JSON.parse(text); } catch { throw new FreeFrameError("FreeFrame returned invalid JSON", 502); } } if (!response.ok) throw new FreeFrameError("FreeFrame request failed", response.status); return body as T; }
-  private request<T>(path: string, init: RequestInit = {}): Promise<T> { if (!this.accessToken) throw new FreeFrameError("FreeFrame session is missing", 401); return fetch(`${this.root}${path}`, { ...init, headers: { Authorization: `Bearer ${this.accessToken}`, Accept: "application/json", ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers } }).then(response => this.parse<T>(response)); }
-  async exchange(integrationToken: string, expected?: ExpectedReviewContext): Promise<FreeFrameSession> { if (!integrationToken) throw new FreeFrameError("Plane integration token is missing", 401); const response = await fetch(`${this.root}/integrations/plane/session`, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ token: integrationToken }) }); const session = parseSession(await this.parse<unknown>(response), expected); this.accessToken = session.access_token; return session; }
+  private request<T>(path: string, init: RequestInit = {}): Promise<T> { if (!this.accessToken) throw new FreeFrameError("FreeFrame session is missing", 401); return fetchWithTimeout(`${this.root}${path}`, { ...init, headers: { Authorization: `Bearer ${this.accessToken}`, Accept: "application/json", ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers } }).then(response => this.parse<T>(response)); }
+  async exchange(integrationToken: string, expected?: ExpectedReviewContext): Promise<FreeFrameSession> { if (!integrationToken) throw new FreeFrameError("Plane integration token is missing", 401); const response = await fetchWithTimeout(`${this.root}/integrations/plane/session`, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ token: integrationToken }) }); const session = parseSession(await this.parse<unknown>(response), expected); this.accessToken = session.access_token; return session; }
   clearSession(): void { this.accessToken = ""; }
   async bootstrap(assetId: string, expected: ExpectedReviewContext, signal?: AbortSignal): Promise<ReviewBootstrap> { if (!uuid(assetId)) throw new FreeFrameError("FreeFrame asset ID is invalid", 400); return parseBootstrap(await this.request<unknown>(`/integrations/plane/assets/${encodeURIComponent(assetId)}/review`, { signal }), { ...expected, assetId }); }
   async stream(assetId: string, versionId: string, signal?: AbortSignal): Promise<ReviewStream> {

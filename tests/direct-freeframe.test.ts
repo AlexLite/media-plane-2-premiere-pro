@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DirectFreeFrameClient } from "../src/direct-freeframe-client";
+import { DirectFreeFrameClient, directReviewVersion } from "../src/direct-freeframe-client";
 import { directLocaleKeys, dt } from "../src/direct-locale";
 import { DirectFreeFrameStore } from "../src/persistence";
 
@@ -8,6 +8,10 @@ const response = (body: unknown, status = 200) => ({ ok: status >= 200 && status
 afterEach(() => vi.unstubAllGlobals());
 
 describe("direct FreeFrame mode", () => {
+  it("maps common decimal rates to canonical rational timing", () => {
+    const mapped = directReviewVersion({ id: "33333333-3333-4333-8333-333333333333", asset_id: "44444444-4444-4444-8444-444444444444", version_number: 1, processing_status: "ready", created_at: "2026-01-01T00:00:00Z", files: [{ duration_seconds: 60, fps: 30000 / 1001 }] });
+    expect(mapped).toMatchObject({ duration_seconds: 60, fps_numerator: 30000, fps_denominator: 1001 });
+  });
   it("logs in at a manually supplied HTTPS API root and keeps access auth in memory", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response({ access_token: "access-secret", refresh_token: "refresh-secret", token_type: "bearer" }))
@@ -36,6 +40,42 @@ describe("direct FreeFrame mode", () => {
     await expect(store.getRefreshToken("https://freeframe.test")).resolves.toBe("refresh-secret-русский");
     await store.clearRefreshToken("https://freeframe.test");
     await expect(store.getRefreshToken("https://freeframe.test")).resolves.toBeUndefined();
+  });
+
+  it("refreshes once and retries an authorized request after 401", async () => {
+    let refreshToken = "refresh-old";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ access_token: "access-old", refresh_token: refreshToken, token_type: "bearer" }))
+      .mockResolvedValueOnce(response({ detail: "expired" }, 401))
+      .mockResolvedValueOnce(response({ access_token: "access-new", refresh_token: "refresh-new", token_type: "bearer" }))
+      .mockResolvedValueOnce(response([{ id: ids.project, name: "Film", description: null, asset_count: 1, role: "owner" }]));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new DirectFreeFrameClient("https://freeframe.test", {
+      getRefreshToken: async () => refreshToken,
+      onTokens: async tokens => { refreshToken = tokens.refresh_token; },
+    });
+    await client.login("editor@example.test", "password");
+    await expect(client.projects()).resolves.toMatchObject([{ name: "Film" }]);
+    expect(refreshToken).toBe("refresh-new");
+    expect((fetchMock.mock.calls[3][1] as RequestInit).headers).toMatchObject({ Authorization: "Bearer access-new" });
+  });
+
+  it("expires the local session when the refreshed token is also rejected", async () => {
+    const expired = vi.fn();
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(response({ access_token: "access-old", refresh_token: "refresh-old", token_type: "bearer" }))
+      .mockResolvedValueOnce(response({ detail: "expired" }, 401))
+      .mockResolvedValueOnce(response({ access_token: "access-new", refresh_token: "refresh-new", token_type: "bearer" }))
+      .mockResolvedValueOnce(response({ detail: "expired" }, 401)));
+    const client = new DirectFreeFrameClient("https://freeframe.test", {
+      getRefreshToken: async () => "refresh-old",
+      onTokens: async () => undefined,
+      onSessionExpired: expired,
+    });
+    await client.login("editor@example.test", "password");
+    await expect(client.projects()).rejects.toMatchObject({ status: 401 });
+    expect(expired).toHaveBeenCalledOnce();
+    await expect(client.projects()).rejects.toMatchObject({ status: 401 });
   });
 
   it("keeps Russian and English dictionaries in parity", () => {

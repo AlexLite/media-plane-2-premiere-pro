@@ -26,7 +26,7 @@ describe("processing poller", () => {
 
   it("terminates after the bounded number of attempts", async () => {
     const client = { bootstrap: vi.fn().mockResolvedValue(bootstrap("processing")), stream: vi.fn() };
-    await expect(waitForReadyVersion(client as any, "a", "v", expected, { maxAttempts: 2, delaysMs: [0], sleep: async () => undefined })).rejects.toThrow("did not reach ready");
+    await expect(waitForReadyVersion(client as any, "a", "v", expected, { maxAttempts: 2, delaysMs: [0], sleep: async () => undefined })).rejects.toMatchObject({ code: "processing-continues" });
     expect(client.bootstrap).toHaveBeenCalledTimes(2);
   });
 

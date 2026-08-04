@@ -9,6 +9,13 @@ export interface ProcessingPollOptions {
   sleep?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
   onStatus?: (status: string, attempt: number) => void;
   validateContext?: () => void | Promise<void>;
+  deadlineMs?: number;
+  now?: () => number;
+}
+
+export class ProcessingContinuesError extends Error {
+  readonly code = "processing-continues";
+  constructor() { super("FreeFrame processing continues after the local polling deadline"); }
 }
 
 function abortError(): DOMException { return new DOMException("Processing polling cancelled", "AbortError"); }
@@ -27,10 +34,13 @@ export async function waitForReadyVersion(
   expected: ExpectedReviewContext,
   options: ProcessingPollOptions = {},
 ): Promise<ReadyReviewVersion> {
-  const maxAttempts = options.maxAttempts ?? 20;
+  const maxAttempts = options.maxAttempts ?? Number.MAX_SAFE_INTEGER;
+  const deadlineMs = options.deadlineMs ?? 15 * 60 * 1000;
+  const now = options.now ?? Date.now;
+  const startedAt = now();
   const delays = options.delaysMs ?? [1000, 1500, 2000, 3000, 5000];
   const sleep = options.sleep ?? defaultSleep;
-  if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || delays.length === 0 || delays.some(value => !Number.isFinite(value) || value < 0)) {
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || !Number.isFinite(deadlineMs) || deadlineMs <= 0 || delays.length === 0 || delays.some(value => !Number.isFinite(value) || value < 0)) {
     throw new Error("Invalid processing polling configuration");
   }
 
@@ -51,7 +61,9 @@ export async function waitForReadyVersion(
         if (!(error instanceof FreeFrameError) || error.status !== 409) throw error;
       }
     }
-    if (attempt < maxAttempts) await sleep(delays[Math.min(attempt - 1, delays.length - 1)], options.signal);
+    const delay = delays[Math.min(attempt - 1, delays.length - 1)];
+    if (attempt >= maxAttempts || now() - startedAt + delay >= deadlineMs) break;
+    await sleep(delay, options.signal);
   }
-  throw new Error("FreeFrame processing did not reach ready state in time");
+  throw new ProcessingContinuesError();
 }

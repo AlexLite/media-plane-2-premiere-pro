@@ -10,8 +10,10 @@ import { ACTIVE_CONTEXT_EVENT } from "./active-context";
 import type { PlaneUser, PremiereContext, ProjectSummary, ReviewAsset, SequenceBinding, SequenceInfo, WorkspaceSummary, WorkItem } from "./domain";
 import { type MessageKey, t } from "./locale";
 import { INTERFACE_LOCALE_EVENT } from "./locale-preference";
+import { OperationGeneration } from "./operation-generation";
 import { BindingStore } from "./persistence";
 import { PlaneClient, PlaneError } from "./plane-client";
+import { ProcessingContinuesError } from "./processing-poller";
 import { PremiereAdapter } from "./premiere";
 import { PremiereDirectExporter, type PreparedDirectExport } from "./premiere-export";
 import { ReviewSessionManager } from "./review-session";
@@ -24,6 +26,7 @@ const store = new BindingStore();
 const premiere = new PremiereAdapter();
 const directExporter = new PremiereDirectExporter();
 const mediaFiles = new UxpMediaFiles();
+const contextOperations = new OperationGeneration();
 
 interface ConnectionDraft {
   baseUrl: string;
@@ -97,7 +100,7 @@ function resetTransferState(): void {
 }
 function transferRunning(): boolean { return ["exporting", "uploading", "processing"].includes(transfer.stage); }
 function transferStageKey(): MessageKey {
-  return ({ idle: "transferIdle", exporting: "transferExporting", uploading: "transferUploading", processing: "transferProcessing", ready: "transferReady", failed: "transferFailed", cancelled: "transferCancelled" } as const)[transfer.stage];
+  return ({ idle: "transferIdle", exporting: "transferExporting", uploading: "transferUploading", processing: "transferProcessing", "processing-background": "transferProcessingBackground", ready: "transferReady", failed: "transferFailed", cancelled: "transferCancelled" } as const)[transfer.stage];
 }
 function fileSize(value: number): string {
   if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
@@ -233,99 +236,125 @@ async function tokenForDraft(): Promise<string | undefined> {
   if (!draft.baseUrl) return undefined;
   return store.getToken(draft.baseUrl);
 }
-async function loadProjects(preferredProject = "", preferredWorkItem = ""): Promise<void> {
+async function loadProjects(preferredProject = "", preferredWorkItem = "", generation?: number): Promise<void> {
   if (!draft.client || !draft.workspaceSlug) { draft.projects = []; draft.workItems = []; return; }
-  draft.projects = await draft.client.getProjects(draft.workspaceSlug);
+  const projects = await draft.client.getProjects(draft.workspaceSlug);
+  if (generation !== undefined) contextOperations.assertCurrent(generation);
+  draft.projects = projects;
   draft.projectId = draft.projects.some(item => item.id === preferredProject) ? preferredProject : draft.projects[0]?.id ?? "";
-  await loadWorkItems(preferredWorkItem);
+  await loadWorkItems(preferredWorkItem, generation);
 }
-async function loadWorkItems(preferredWorkItem = ""): Promise<void> {
+async function loadWorkItems(preferredWorkItem = "", generation?: number): Promise<void> {
   if (!draft.client || !draft.workspaceSlug || !draft.projectId) { draft.workItems = []; draft.workItemId = ""; return; }
-  draft.workItems = await draft.client.getIssues(draft.workspaceSlug, draft.projectId);
+  const workItems = await draft.client.getIssues(draft.workspaceSlug, draft.projectId);
+  if (generation !== undefined) contextOperations.assertCurrent(generation);
+  draft.workItems = workItems;
   draft.workItemId = draft.workItems.some(item => item.id === preferredWorkItem) ? preferredWorkItem : draft.workItems[0]?.id ?? "";
 }
-async function validateConnection(): Promise<void> {
+async function validateConnection(generation = contextOperations.begin()): Promise<void> {
   captureForm();
   errorKey = undefined; noticeKey = undefined; busyKey = "validatingConnection"; render();
   try {
     const token = await tokenForDraft();
+    contextOperations.assertCurrent(generation);
     if (!token) { errorKey = "missingCredential"; return; }
     const client = new PlaneClient(draft.baseUrl, token);
     const { user, workspaces } = await client.validate();
+    contextOperations.assertCurrent(generation);
     draft.client = client; draft.token = token; draft.user = user; draft.workspaces = workspaces;
     const preferredWorkspace = draft.workspaceSlug;
     draft.workspaceSlug = workspaces.some(item => item.slug === preferredWorkspace) ? preferredWorkspace : workspaces[0]?.slug ?? "";
-    await loadProjects(draft.projectId, draft.workItemId);
-  } catch {
+    await loadProjects(draft.projectId, draft.workItemId, generation);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
     draft.client = undefined; draft.user = undefined; draft.workspaces = []; draft.projects = []; draft.workItems = [];
     errorKey = "connectionError";
-  } finally { busyKey = undefined; render(); }
+  } finally { if (contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
 async function changeWorkspace(): Promise<void> {
+  const generation = contextOperations.begin();
   captureForm();
   if (!draft.client) return;
   errorKey = undefined; noticeKey = undefined; busyKey = "loading"; render();
-  try { await loadProjects(); } catch { errorKey = "discoveryError"; draft.projects = []; draft.workItems = []; }
-  finally { busyKey = undefined; render(); }
+  try { await loadProjects("", "", generation); } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) { errorKey = "discoveryError"; draft.projects = []; draft.workItems = []; } }
+  finally { if (contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
 async function changeProject(): Promise<void> {
+  const generation = contextOperations.begin();
   captureForm();
   if (!draft.client) return;
   errorKey = undefined; noticeKey = undefined; busyKey = "loading"; render();
-  try { await loadWorkItems(); } catch { errorKey = "discoveryError"; draft.workItems = []; }
-  finally { busyKey = undefined; render(); }
+  try { await loadWorkItems("", generation); } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) { errorKey = "discoveryError"; draft.workItems = []; } }
+  finally { if (contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
-async function loadBoundReview(): Promise<void> {
+async function loadBoundReview(generation?: number): Promise<void> {
   if (!bound) return;
-  bound.review = await loadAssetReview(bound.binding, bound.client, bound.sessions);
+  const current = bound;
+  const review = await loadAssetReview(current.binding, current.client, current.sessions);
+  if (generation !== undefined) contextOperations.assertCurrent(generation);
+  if (bound !== current) throw new DOMException("Review binding changed", "AbortError");
+  bound.review = review;
   if (bound.review.linked) assetDraft = emptyAssetDraft();
 }
 async function bindSequence(): Promise<void> {
   if (!sequence) return;
+  const generation = contextOperations.begin();
   captureForm();
   errorKey = undefined; noticeKey = undefined; busyKey = "bindingSequence"; render();
   try {
     const token = await tokenForDraft();
+    contextOperations.assertCurrent(generation);
     if (!token || !draft.client || !draft.user || !draft.workspaceSlug || !draft.projectId || !draft.workItemId) throw new Error();
     const workItem = await draft.client.getWorkItem(draft.workspaceSlug, draft.projectId, draft.workItemId);
+    contextOperations.assertCurrent(generation);
     const binding: SequenceBinding = { projectGuid: sequence.projectGuid, sequenceId: sequence.id, baseUrl: draft.baseUrl, workspaceSlug: draft.workspaceSlug, projectId: draft.projectId, workItemId: draft.workItemId };
     await store.saveToken(binding.baseUrl, token);
     store.save(binding);
     const client = draft.client;
     bound = { binding, user: draft.user, workItem, client, sessions: new ReviewSessionManager(client) };
     draft = emptyDraft(); assetDraft = emptyAssetDraft();
-    try { await loadBoundReview(); } catch { errorKey = "reviewLoadError"; }
-  } catch { errorKey = "bindingError"; }
-  finally { busyKey = undefined; render(); }
+    try { await loadBoundReview(generation); } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) errorKey = "reviewLoadError"; }
+  } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) errorKey = "bindingError"; }
+  finally { if (contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
-async function restoreBinding(binding: SequenceBinding): Promise<void> {
+async function restoreBinding(binding: SequenceBinding, generation?: number): Promise<void> {
   errorKey = undefined; noticeKey = undefined; busyKey = "loading"; render();
   try {
     const token = await store.getToken(binding.baseUrl);
+    if (generation !== undefined) contextOperations.assertCurrent(generation);
     if (!token) { draft = emptyDraft(binding); errorKey = "missingCredential"; return; }
     const client = new PlaneClient(binding.baseUrl, token);
     const [user, workItem] = await Promise.all([client.getCurrentUser(), client.getWorkItem(binding.workspaceSlug, binding.projectId, binding.workItemId)]);
+    if (generation !== undefined) contextOperations.assertCurrent(generation);
     bound = { binding, user, workItem, client, sessions: new ReviewSessionManager(client) };
     assetDraft = emptyAssetDraft();
-    try { await loadBoundReview(); } catch { errorKey = "reviewLoadError"; }
-  } catch { bound = undefined; draft = emptyDraft(binding); errorKey = "restoreError"; }
-  finally { busyKey = undefined; render(); }
+    try { await loadBoundReview(generation); } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) errorKey = "reviewLoadError"; }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    bound = undefined; draft = emptyDraft(binding); errorKey = "restoreError";
+  }
+  finally { if (generation === undefined || contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
 async function refreshBound(): Promise<void> {
   if (!bound) return;
+  const generation = contextOperations.begin();
+  const current = bound;
   errorKey = undefined; noticeKey = undefined; busyKey = "loading"; render();
   try {
     const [user, workItem] = await Promise.all([
-      bound.client.getCurrentUser(),
-      bound.client.getWorkItem(bound.binding.workspaceSlug, bound.binding.projectId, bound.binding.workItemId),
+      current.client.getCurrentUser(),
+      current.client.getWorkItem(current.binding.workspaceSlug, current.binding.projectId, current.binding.workItemId),
     ]);
+    contextOperations.assertCurrent(generation);
+    if (bound !== current) throw new DOMException("Review binding changed", "AbortError");
     bound.user = user; bound.workItem = workItem;
-    await loadBoundReview();
-  } catch { errorKey = "reviewLoadError"; }
-  finally { busyKey = undefined; render(); }
+    await loadBoundReview(generation);
+  } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) errorKey = "reviewLoadError"; }
+  finally { if (contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
 function disconnectLocal(): void {
   if (!bound) return;
+  contextOperations.invalidate();
   const binding = bound.binding;
   resetTransferState();
   bound.sessions.clear();
@@ -334,37 +363,51 @@ function disconnectLocal(): void {
 }
 async function searchAssets(): Promise<void> {
   if (!bound?.review || bound.review.linked || !bound.review.canManage) return;
+  const generation = contextOperations.begin();
+  const current = bound;
   captureAssetForm(); errorKey = undefined; noticeKey = undefined; busyKey = "searchingAssets"; render();
   try {
-    const assets = await bound.client.searchAssets(bound.binding.workspaceSlug, bound.binding.projectId, bound.binding.workItemId, assetDraft.query);
+    const assets = await current.client.searchAssets(current.binding.workspaceSlug, current.binding.projectId, current.binding.workItemId, assetDraft.query);
+    contextOperations.assertCurrent(generation);
+    if (bound !== current) throw new DOMException("Review binding changed", "AbortError");
     assetDraft.assets = compatibleVideoAssets(assets);
     assetDraft.searched = true;
     assetDraft.selectedAssetId = assetDraft.assets.some(asset => asset.id === assetDraft.selectedAssetId) ? assetDraft.selectedAssetId : assetDraft.assets[0]?.id ?? "";
-  } catch { assetDraft.assets = []; assetDraft.selectedAssetId = ""; assetDraft.searched = true; errorKey = "assetCatalogError"; }
-  finally { busyKey = undefined; render(); }
+  } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) { assetDraft.assets = []; assetDraft.selectedAssetId = ""; assetDraft.searched = true; errorKey = "assetCatalogError"; } }
+  finally { if (contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
 async function linkSelectedAsset(): Promise<void> {
   if (!bound?.review || bound.review.linked || !bound.review.canManage) return;
+  const generation = contextOperations.begin();
+  const current = bound;
   captureAssetForm();
   const asset = assetDraft.assets.find(item => item.id === assetDraft.selectedAssetId);
   if (!asset) { errorKey = "selectAssetRequired"; render(); return; }
   errorKey = undefined; noticeKey = undefined; busyKey = "linkingAsset"; render();
   try {
-    bound.review = await linkAssetAndConfirm(bound.binding, bound.client, bound.sessions, asset);
+    const review = await linkAssetAndConfirm(current.binding, current.client, current.sessions, asset);
+    contextOperations.assertCurrent(generation);
+    if (bound !== current) throw new DOMException("Review binding changed", "AbortError");
+    bound.review = review;
     resetTransferState(); assetDraft = emptyAssetDraft(); noticeKey = "assetLinked";
-  } catch (error) { errorKey = error instanceof PlaneError && error.status === 409 ? "assetConflict" : "assetLinkError"; }
-  finally { busyKey = undefined; render(); }
+  } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) errorKey = error instanceof PlaneError && error.status === 409 ? "assetConflict" : "assetLinkError"; }
+  finally { if (contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
 async function createAndLinkAsset(): Promise<void> {
   if (!bound?.review || bound.review.linked || !bound.review.canManage) return;
+  const generation = contextOperations.begin();
+  const current = bound;
   captureAssetForm();
   if (!assetDraft.newAssetName) { errorKey = "assetNameRequired"; render(); return; }
   errorKey = undefined; noticeKey = undefined; busyKey = "creatingAsset"; render();
   try {
-    bound.review = await createVideoAssetAndLink(bound.binding, bound.client, bound.sessions, assetDraft.newAssetName);
+    const review = await createVideoAssetAndLink(current.binding, current.client, current.sessions, assetDraft.newAssetName);
+    contextOperations.assertCurrent(generation);
+    if (bound !== current) throw new DOMException("Review binding changed", "AbortError");
+    bound.review = review;
     resetTransferState(); assetDraft = emptyAssetDraft(); noticeKey = "assetCreatedLinked";
-  } catch (error) { errorKey = error instanceof PlaneError && error.status === 409 ? "assetConflict" : "assetCreateError"; }
-  finally { busyKey = undefined; render(); }
+  } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) errorKey = error instanceof PlaneError && error.status === 409 ? "assetConflict" : "assetCreateError"; }
+  finally { if (contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
 function requestRemoteUnlink(): void {
   if (!bound?.review?.linked || !bound.review.permissions.manage) return;
@@ -373,22 +416,31 @@ function requestRemoteUnlink(): void {
 function cancelRemoteUnlink(): void { assetDraft.confirmUnlink = false; render(); }
 async function confirmRemoteUnlink(): Promise<void> {
   if (!bound?.review?.linked || !bound.review.permissions.manage) return;
+  const generation = contextOperations.begin();
+  const owner = bound;
   const current = bound.review;
   errorKey = undefined; noticeKey = undefined; busyKey = "unlinkingAsset"; render();
   try {
-    bound.review = await unlinkAssetAndConfirm(bound.binding, bound.client, bound.sessions, current);
+    const review = await unlinkAssetAndConfirm(owner.binding, owner.client, owner.sessions, current);
+    contextOperations.assertCurrent(generation);
+    if (bound !== owner) throw new DOMException("Review binding changed", "AbortError");
+    bound.review = review;
     resetTransferState(); assetDraft = emptyAssetDraft(); noticeKey = "assetUnlinkedConfirmed";
-  } catch { errorKey = "assetUnlinkError"; assetDraft.confirmUnlink = false; }
-  finally { busyKey = undefined; render(); }
+  } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) { errorKey = "assetUnlinkError"; assetDraft.confirmUnlink = false; } }
+  finally { if (contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
 async function selectExportedMedia(): Promise<void> {
   if (!bound?.review?.linked || !bound.review.permissions.upload || transferRunning()) return;
+  const generation = contextOperations.begin();
+  const current = bound;
   errorKey = undefined; noticeKey = undefined; busyKey = "selectingMedia"; render();
   try {
     const file = await mediaFiles.selectExported();
+    contextOperations.assertCurrent(generation);
+    if (bound !== current) throw new DOMException("Review binding changed", "AbortError");
     if (file) { selectedMedia = file; noticeKey = "mediaSelected"; }
-  } catch { errorKey = "mediaSelectionError"; }
-  finally { busyKey = undefined; render(); }
+  } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) errorKey = "mediaSelectionError"; }
+  finally { if (contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
 async function prepareDirectExport(): Promise<void> {
   if (!sequence || !bound?.review?.linked || !bound.review.permissions.upload || transferRunning()) return;
@@ -420,6 +472,7 @@ async function runTransfer(source: SelectedMediaFile | ((signal: AbortSignal) =>
     await loadBoundReview();
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") noticeKey = "transferCancelledNotice";
+    else if (error instanceof ProcessingContinuesError) noticeKey = "transferProcessingBackgroundNotice";
     else errorKey = "transferError";
   } finally { transferController = undefined; render(); }
 }
@@ -428,18 +481,23 @@ function exportAndUpload(): void { if (preparedExport) void runTransfer(signal =
 function cancelTransfer(): void { transferController?.cancel(); }
 
 async function start(): Promise<void> {
+  const generation = contextOperations.begin();
   errorKey = undefined; noticeKey = undefined; busyKey = "loading"; render();
   try {
-    context = await premiere.context();
+    const nextContext = await premiere.context();
+    contextOperations.assertCurrent(generation);
+    context = nextContext;
     sequence = context.status === "ready" ? context.sequence : undefined;
     if (!sequence) return;
     const binding = store.get(sequence.projectGuid, sequence.id);
-    if (binding) await restoreBinding(binding); else {
+    if (binding) await restoreBinding(binding, generation); else {
       draft = emptyDraft(); assetDraft = emptyAssetDraft(); bound = undefined;
-      if (draft.baseUrl && await store.getToken(draft.baseUrl)) await validateConnection();
+      if (draft.baseUrl && await store.getToken(draft.baseUrl)) { contextOperations.assertCurrent(generation); await validateConnection(generation); }
     }
-  } catch { context = { status: "no-project" }; sequence = undefined; errorKey = "hostError"; }
-  finally { busyKey = undefined; render(); }
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === "AbortError")) { context = { status: "no-project" }; sequence = undefined; errorKey = "hostError"; }
+  }
+  finally { if (contextOperations.current(generation)) { busyKey = undefined; render(); } }
 }
 
 root.addEventListener("click", event => {

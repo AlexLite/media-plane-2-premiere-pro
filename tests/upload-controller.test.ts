@@ -46,4 +46,12 @@ describe("review upload controller", () => {
     expect(uploader.upload).not.toHaveBeenCalled();
     expect(controller.current().stage).toBe("failed");
   });
+
+  it("does not report server processing as failed after the local polling deadline", async () => {
+    const uploader = { upload: vi.fn(async () => ({ asset_id: "a", version_id: "v", status: "processing" })) };
+    const client = { bootstrap: vi.fn().mockResolvedValue(bootstrap("processing")), stream: vi.fn() };
+    const controller = new ReviewUploadController(client as any, uploader as any);
+    await expect(controller.run("a", { projectId: "p", issueId: "i" }, file, { poll: { maxAttempts: 1, delaysMs: [0], sleep: async () => undefined } })).rejects.toMatchObject({ code: "processing-continues" });
+    expect(controller.current().stage).toBe("processing-background");
+  });
 });

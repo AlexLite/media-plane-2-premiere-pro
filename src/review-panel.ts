@@ -3,6 +3,7 @@ import { loadAssetReview, type AssetReviewState } from "./asset-workflow";
 import type { ReviewVersion, SequenceBinding, SequenceInfo, WorkItem } from "./domain";
 import { type MessageKey, t } from "./locale";
 import { INTERFACE_LOCALE_EVENT } from "./locale-preference";
+import { OperationGeneration } from "./operation-generation";
 import { BindingStore } from "./persistence";
 import { PlaneClient } from "./plane-client";
 import { PremiereAdapter } from "./premiere";
@@ -16,6 +17,7 @@ const root = document.querySelector<HTMLDivElement>("#review-comments-app");
 const store = new BindingStore();
 const premiere = new PremiereAdapter();
 const premiereMarkers = new PremiereMarkerAdapter();
+const operations = new OperationGeneration();
 
 interface MarkerSyncState extends PremiereMarkerSyncResult { skipped: number }
 interface ReviewPanelState {
@@ -115,15 +117,19 @@ async function validateContext(binding: SequenceBinding): Promise<void> {
   const stored = store.get(binding.projectGuid, binding.sequenceId);
   if (!stored || stored.baseUrl !== binding.baseUrl || stored.workspaceSlug !== binding.workspaceSlug || stored.projectId !== binding.projectId || stored.workItemId !== binding.workItemId) throw new Error("Plane review binding changed");
 }
-async function loadComments(): Promise<void> {
+async function loadComments(generation: number, signal?: AbortSignal): Promise<void> {
   if (!state.binding || !state.review?.linked || !state.sessions || !state.sequence) return;
+  const binding = state.binding, review = state.review, sessions = state.sessions, sequence = state.sequence;
   const version = selectedVersion();
   if (!version) return;
-  const active = await state.sessions.get(state.binding);
-  if (!active || active.assetId !== state.review.asset.id) throw new Error("Review session does not match the linked asset");
-  state.comments = await loadVersionComments(active.freeframe, active.assetId, version, { sequenceDurationSeconds: state.sequence.durationSeconds, signal: request?.signal });
+  const active = await sessions.get(binding);
+  operations.assertCurrent(generation);
+  if (!active || active.assetId !== review.asset.id) throw new Error("Review session does not match the linked asset");
+  const comments = await loadVersionComments(active.freeframe, active.assetId, version, { sequenceDurationSeconds: sequence.durationSeconds, signal });
+  operations.assertCurrent(generation);
+  state.comments = comments;
 }
-async function reconcileSelectedMarkers(): Promise<void> {
+async function reconcileSelectedMarkers(generation: number): Promise<void> {
   if (!state.binding || !state.review?.linked || !state.sequence || !state.workItem) throw new Error("Marker reconciliation context is unavailable");
   const version = selectedVersion();
   if (!version) throw new Error("No selected review version");
@@ -141,52 +147,60 @@ async function reconcileSelectedMarkers(): Promise<void> {
     { assetId: state.review.asset.id, versionId: version.id },
     t("markerUndoLabel"),
   );
+  operations.assertCurrent(generation);
   state.markerSync = { ...result, skipped: built.skipped };
   state.markersSyncedVersionId = version.id;
 }
 async function start(): Promise<void> {
+  const generation = operations.begin();
   const previousAssetId = state.review?.linked ? state.review.asset.id : undefined;
   const previousSyncedVersionId = state.markersSyncedVersionId;
   request?.abort();
-  request = new AbortController();
+  const controller = new AbortController(); request = controller;
   state.errorKey = undefined; state.noticeKey = undefined; state.busyKey = "commentsLoading"; render();
   try {
     const context = await premiere.context();
+    operations.assertCurrent(generation);
     state.sequence = context.status === "ready" ? context.sequence : undefined;
     state.binding = state.sequence ? store.get(state.sequence.projectGuid, state.sequence.id) : undefined;
     state.client = undefined; state.sessions = undefined; state.review = undefined; state.workItem = undefined; state.comments = [];
     if (!state.sequence || !state.binding) return;
     const token = await store.getToken(state.binding.baseUrl);
+    operations.assertCurrent(generation);
     if (!token) { state.errorKey = "missingCredential"; return; }
     const client = new PlaneClient(state.binding.baseUrl, token);
     const sessions = new ReviewSessionManager(client);
-    state.client = client; state.sessions = sessions;
     const [review, workItem] = await Promise.all([
       loadAssetReview(state.binding, client, sessions),
       client.getWorkItem(state.binding.workspaceSlug, state.binding.projectId, state.binding.workItemId),
     ]);
+    operations.assertCurrent(generation);
+    state.client = client; state.sessions = sessions;
     state.review = review; state.workItem = workItem;
     if (!review.linked) { state.selectedVersionId = ""; state.markersSyncedVersionId = undefined; state.markerSync = undefined; return; }
     const previous = state.selectedVersionId;
     state.selectedVersionId = review.versions.some(version => version.id === previous) ? previous : review.versions[0]?.id ?? "";
     if (review.asset.id !== previousAssetId) { state.markersSyncedVersionId = undefined; state.markerSync = undefined; }
-    await loadComments();
-    if (previousSyncedVersionId === state.selectedVersionId && review.asset.id === previousAssetId) await reconcileSelectedMarkers();
+    await loadComments(generation, controller.signal);
+    if (previousSyncedVersionId === state.selectedVersionId && review.asset.id === previousAssetId) await reconcileSelectedMarkers(generation);
   } catch (error) {
     if (!(error instanceof DOMException && error.name === "AbortError")) state.errorKey = "commentLoadError";
-  } finally { state.busyKey = undefined; render(); }
+  } finally { if (request === controller) request = undefined; if (operations.current(generation)) { state.busyKey = undefined; render(); } }
 }
 async function syncMarkers(): Promise<void> {
   if (!state.binding || !state.review?.linked || !state.sequence || state.busyKey) return;
+  const generation = operations.begin();
   state.errorKey = undefined; state.noticeKey = undefined; state.busyKey = "markersSyncing"; render();
   try {
     await validateContext(state.binding);
-    await reconcileSelectedMarkers();
+    operations.assertCurrent(generation);
+    await reconcileSelectedMarkers(generation);
     await validateContext(state.binding);
+    operations.assertCurrent(generation);
     state.noticeKey = "markersSynced";
   } catch {
     state.errorKey = "markerSyncError";
-  } finally { state.busyKey = undefined; render(); }
+  } finally { if (operations.current(generation)) { state.busyKey = undefined; render(); } }
 }
 async function createComment(): Promise<void> {
   if (!state.binding || !state.review?.linked || !state.review.permissions.comment || !state.sessions || !state.sequence || state.busyKey) return;
@@ -195,42 +209,51 @@ async function createComment(): Promise<void> {
   const body = state.body.trim();
   if (!body) { state.errorKey = "commentBodyRequired"; render(); return; }
   const keepMarkersSynced = state.markersSyncedVersionId === version.id;
-  request?.abort(); const controller = new AbortController(); request = controller;
+  const generation = operations.begin(); request?.abort(); const controller = new AbortController(); request = controller;
   state.errorKey = undefined; state.noticeKey = undefined; state.busyKey = "creatingComment"; render();
   try {
     await validateContext(state.binding);
+    operations.assertCurrent(generation);
     const playhead = await premiere.playhead(state.binding.projectGuid, state.binding.sequenceId);
+    operations.assertCurrent(generation);
     const active = await state.sessions.get(state.binding);
+    operations.assertCurrent(generation);
     if (!active || active.assetId !== state.review.asset.id) throw new Error("Review session does not match the linked asset");
     await createCommentAtPlayhead(active.freeframe, active.assetId, version, body, playhead.seconds, playhead.sequenceDurationSeconds ?? state.sequence.durationSeconds, controller.signal);
+    operations.assertCurrent(generation);
     await validateContext(state.binding);
-    state.body = ""; await loadComments();
-    if (keepMarkersSynced) await reconcileSelectedMarkers();
+    operations.assertCurrent(generation);
+    state.body = ""; await loadComments(generation, controller.signal);
+    if (keepMarkersSynced) await reconcileSelectedMarkers(generation);
     state.noticeKey = "commentCreated";
   } catch (error) {
     if (error instanceof ReviewTimingError) state.errorKey = ({ "timing-unavailable": "commentTimingUnavailable", "outside-version": "commentOutsideVersion", "outside-sequence": "commentOutsideSequence", "invalid-playhead": "commentCreateError" } as const)[error.code];
     else if (!(error instanceof DOMException && error.name === "AbortError")) state.errorKey = "commentCreateError";
-  } finally { if (request === controller) request = undefined; state.busyKey = undefined; render(); }
+  } finally { if (request === controller) request = undefined; if (operations.current(generation)) { state.busyKey = undefined; render(); } }
 }
 async function toggleResolution(commentId: string, resolved: boolean): Promise<void> {
   if (!state.binding || !state.review?.linked || !state.review.permissions.comment || !state.sessions || state.busyKey) return;
   const version = selectedVersion(), item = state.comments.find(candidate => candidate.comment.id === commentId);
   if (!version || !item) return;
   const keepMarkersSynced = state.markersSyncedVersionId === version.id;
-  request?.abort(); const controller = new AbortController(); request = controller;
+  const generation = operations.begin(); request?.abort(); const controller = new AbortController(); request = controller;
   state.errorKey = undefined; state.noticeKey = undefined; state.busyKey = "updatingResolution"; render();
   try {
     await validateContext(state.binding);
+    operations.assertCurrent(generation);
     const active = await state.sessions.get(state.binding);
+    operations.assertCurrent(generation);
     if (!active || active.assetId !== state.review.asset.id) throw new Error("Review session does not match the linked asset");
     await setCommentResolved(active.freeframe, active.assetId, version.id, item.comment, resolved, controller.signal);
+    operations.assertCurrent(generation);
     await validateContext(state.binding);
-    await loadComments();
-    if (keepMarkersSynced) await reconcileSelectedMarkers();
+    operations.assertCurrent(generation);
+    await loadComments(generation, controller.signal);
+    if (keepMarkersSynced) await reconcileSelectedMarkers(generation);
     state.noticeKey = "resolutionUpdated";
   } catch (error) {
     if (!(error instanceof DOMException && error.name === "AbortError")) state.errorKey = "resolutionError";
-  } finally { if (request === controller) request = undefined; state.busyKey = undefined; render(); }
+  } finally { if (request === controller) request = undefined; if (operations.current(generation)) { state.busyKey = undefined; render(); } }
 }
 
 root?.addEventListener("click", event => {
@@ -244,15 +267,16 @@ root?.addEventListener("click", event => {
 root?.addEventListener("change", event => {
   const target = event.target as HTMLSelectElement;
   if (target.id === "reviewVersionSelect" && state.review?.linked && state.review.versions.some(version => version.id === target.value)) {
+    const generation = operations.begin(); request?.abort(); const controller = new AbortController(); request = controller;
     state.selectedVersionId = target.value; state.comments = []; state.markerSync = undefined; state.markersSyncedVersionId = undefined; state.errorKey = undefined; state.noticeKey = undefined; state.busyKey = "commentsLoading"; render();
-    void loadComments().catch(() => { state.errorKey = "commentLoadError"; }).finally(() => { state.busyKey = undefined; render(); });
+    void loadComments(generation, controller.signal).catch(error => { if (!(error instanceof DOMException && error.name === "AbortError") && operations.current(generation)) state.errorKey = "commentLoadError"; }).finally(() => { if (request === controller) request = undefined; if (operations.current(generation)) { state.busyKey = undefined; render(); } });
   }
 });
 root?.addEventListener("input", event => {
   const target = event.target as HTMLTextAreaElement;
   if (target.id === "reviewCommentBody") state.body = target.value;
 });
-window.addEventListener("unload", () => { request?.abort(); state.sessions?.clear(); });
+window.addEventListener("unload", () => { operations.invalidate(); request?.abort(); state.sessions?.clear(); });
 window.addEventListener(INTERFACE_LOCALE_EVENT, render);
 window.addEventListener(ACTIVE_CONTEXT_EVENT, () => void start());
 void start();

@@ -1,9 +1,9 @@
 import type { ReviewStream, ReviewVersion } from "./domain";
 import { FreeFrameClient, type ExpectedReviewContext } from "./freeframe-client";
 import { MultipartUploader, type UploadFile } from "./multipart-uploader";
-import { waitForReadyVersion, type ProcessingPollOptions } from "./processing-poller";
+import { ProcessingContinuesError, waitForReadyVersion, type ProcessingPollOptions } from "./processing-poller";
 
-export type TransferStage = "idle" | "exporting" | "uploading" | "processing" | "ready" | "failed" | "cancelled";
+export type TransferStage = "idle" | "exporting" | "uploading" | "processing" | "processing-background" | "ready" | "failed" | "cancelled";
 export interface TransferSnapshot {
   stage: TransferStage;
   progress: number;
@@ -67,7 +67,8 @@ export class ReviewUploadController {
       this.update({ stage: "ready", progress: 1, versionId: ready.version.id, processingStatus: "ready" }, options.onChange);
       return ready;
     } catch (error) {
-      this.update({ stage: isAbort(error) || controller.signal.aborted ? "cancelled" : "failed", progress: this.snapshot.progress, versionId: this.snapshot.versionId, processingStatus: this.snapshot.processingStatus }, options.onChange);
+      const stage = isAbort(error) || controller.signal.aborted ? "cancelled" : error instanceof ProcessingContinuesError ? "processing-background" : "failed";
+      this.update({ stage, progress: this.snapshot.progress, versionId: this.snapshot.versionId, processingStatus: this.snapshot.processingStatus }, options.onChange);
       throw error;
     } finally { this.active = undefined; }
   }

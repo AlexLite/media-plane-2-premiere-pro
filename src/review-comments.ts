@@ -1,5 +1,5 @@
 import type { ReviewComment, ReviewVersion } from "./domain";
-import { FreeFrameClient } from "./freeframe-client";
+import type { ReviewCommentCreateInput } from "./freeframe-client";
 import { canonicalCommentPosition, canonicalPlayheadPosition, type CanonicalCommentPosition } from "./review-timing";
 
 export interface PositionedReviewComment {
@@ -8,9 +8,14 @@ export interface PositionedReviewComment {
 }
 
 export interface ReviewCommentLoadOptions { sequenceDurationSeconds?: number; signal?: AbortSignal }
+export interface ReviewCommentClient {
+  comments(assetId: string, versionId: string, signal?: AbortSignal): Promise<ReviewComment[]>;
+  createComment(assetId: string, versionId: string, input: ReviewCommentCreateInput, signal?: AbortSignal): Promise<ReviewComment>;
+  toggleResolved(assetId: string, versionId: string, commentId: string, signal?: AbortSignal): Promise<ReviewComment>;
+}
 
 export async function loadVersionComments(
-  client: FreeFrameClient,
+  client: ReviewCommentClient,
   assetId: string,
   version: ReviewVersion,
   options: ReviewCommentLoadOptions = {},
@@ -26,7 +31,7 @@ export async function loadVersionComments(
 }
 
 export async function createCommentAtPlayhead(
-  client: FreeFrameClient,
+  client: ReviewCommentClient,
   assetId: string,
   version: ReviewVersion,
   body: string,
@@ -46,7 +51,7 @@ export async function createCommentAtPlayhead(
 }
 
 export async function setCommentResolved(
-  client: FreeFrameClient,
+  client: ReviewCommentClient,
   assetId: string,
   versionId: string,
   comment: ReviewComment,
