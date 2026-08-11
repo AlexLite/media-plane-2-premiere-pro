@@ -336,6 +336,7 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-onboarding p { color: #a5a5aa; font-size: 12px; margin: 0 0 20px; }
 .ff-action-primary { background: #604cf5; border: 1px solid #7563ff; border-radius: 6px; color: #fff; cursor: pointer; display: inline-block; font-size: 13px; font-weight: 600; line-height: 19px; padding: 10px 18px; text-align: center; }
 .ff-action-primary:hover { background: #6e5cff; }
+.ff-onboarding .ff-action-primary { display: block; margin-left: auto; margin-right: auto; width: 180px; }
 .ff-action-secondary { border: 1px solid #45454a; border-radius: 6px; color: #c8c8cd; cursor: pointer; display: inline-block; font-size: 12px; margin-top: 8px; padding: 8px 12px; }
 .ff-server-input { color: #9999a0; display: block; font-size: 10px; margin: 0 auto 6px; max-width: 280px; text-align: left; }
 .ff-server-input input { background: #1e1e20 !important; border-color: #3c3c42 !important; display: block; height: 34px !important; margin-top: 5px; width: 100%; }

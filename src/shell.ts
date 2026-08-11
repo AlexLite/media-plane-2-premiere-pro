@@ -1,5 +1,5 @@
 import { ACTIVE_CONTEXT_EVENT, activeContextKey } from "./active-context";
-import { normalizeShellMode, normalizeShellView, SHELL_MODE_EVENT, SHELL_VIEW_EVENT, type ShellMode, type ShellView } from "./shell-events";
+import { FREEFRAME_AUTH_EVENT, normalizeShellMode, normalizeShellView, SHELL_MODE_EVENT, SHELL_VIEW_EVENT, type ShellMode, type ShellView } from "./shell-events";
 import { interfaceLocale, INTERFACE_LOCALE_EVENT, setInterfaceLocale, type InterfaceLocale } from "./locale-preference";
 import { PremiereAdapter } from "./premiere";
 import { st } from "./shell-locale";
@@ -14,6 +14,7 @@ let mode: ShellMode = normalizeShellMode(window.localStorage.getItem(MODE_STORAG
 let observedContextKey: string | undefined;
 let contextScanRunning = false;
 let forceScanPending = false;
+let freeFrameAuthenticated = false;
 
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
 
@@ -33,7 +34,8 @@ function tabMarkup(view: ShellView): string {
 
 function freeFrameHeader(): string {
   const locale = interfaceLocale();
-  return `<header class="ff-shell-header"><div class="ff-appbar"><div class="ff-app-title"><strong>${escape(st("freeframeTitle"))}</strong><span aria-hidden="true">☰</span></div><div class="ff-app-actions"><label class="ff-locale-control" for="interfaceLocale"><span>${escape(st("languageLabel"))}</span><select id="interfaceLocale"><option value="ru"${locale === "ru" ? " selected" : ""}>${escape(st("languageRussian"))}</option><option value="en"${locale === "en" ? " selected" : ""}>${escape(st("languageEnglish"))}</option></select></label><div class="ff-account" role="button" tabindex="0" data-shell-tab="settings" aria-label="${escape(st("freeframeAccount"))}" title="${escape(st("freeframeAccount"))}"><img class="shell-user-icon" src="assets/user.png" alt=""></div></div></div><nav class="ff-primary-tabs" role="tablist"><div class="ff-primary-tab" role="tab" tabindex="0" data-shell-tab="review">⌘ ${escape(st("freeframeSequences"))}</div><div class="ff-primary-tab" role="tab" tabindex="0" data-shell-tab="media">▦ ${escape(st("freeframeBrowse"))}</div></nav></header>`;
+  const navigation = freeFrameAuthenticated ? `<nav class="ff-primary-tabs" role="tablist"><div class="ff-primary-tab" role="tab" tabindex="0" data-shell-tab="review">⌘ ${escape(st("freeframeSequences"))}</div><div class="ff-primary-tab" role="tab" tabindex="0" data-shell-tab="media">▦ ${escape(st("freeframeBrowse"))}</div></nav>` : "";
+  return `<header class="ff-shell-header"><div class="ff-appbar"><div class="ff-app-title"><strong>${escape(st("freeframeTitle"))}</strong><span aria-hidden="true">☰</span></div><div class="ff-app-actions"><label class="ff-locale-control" for="interfaceLocale"><span>${escape(st("languageLabel"))}</span><select id="interfaceLocale"><option value="ru"${locale === "ru" ? " selected" : ""}>${escape(st("languageRussian"))}</option><option value="en"${locale === "en" ? " selected" : ""}>${escape(st("languageEnglish"))}</option></select></label><div class="ff-account" role="button" tabindex="0" data-shell-tab="settings" aria-label="${escape(st("freeframeAccount"))}" title="${escape(st("freeframeAccount"))}"><img class="shell-user-icon" src="assets/user.png" alt=""></div></div></div>${navigation}</header>`;
 }
 
 function apply(view: ShellView): void {
@@ -118,6 +120,12 @@ window.addEventListener(SHELL_VIEW_EVENT, event => {
   if (requested !== active) apply(requested);
 });
 window.addEventListener(INTERFACE_LOCALE_EVENT, render);
+window.addEventListener(FREEFRAME_AUTH_EVENT, event => {
+  const authenticated = Boolean((event as CustomEvent<unknown>).detail);
+  if (authenticated === freeFrameAuthenticated) return;
+  freeFrameAuthenticated = authenticated;
+  if (mode === "freeframe") render();
+});
 
 render();
 void scanActiveContext();

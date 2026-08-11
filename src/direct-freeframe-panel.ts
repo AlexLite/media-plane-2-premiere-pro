@@ -7,7 +7,7 @@ import { OperationGeneration } from "./operation-generation";
 import { DirectFreeFrameStore } from "./persistence";
 import { PremiereAdapter } from "./premiere";
 import { createCommentAtPlayhead } from "./review-comments";
-import { normalizeShellMode, normalizeShellView, requestShellView, SHELL_MODE_EVENT, SHELL_VIEW_EVENT, USER_CONFIG_EVENT, type ShellMode, type ShellView } from "./shell-events";
+import { FREEFRAME_AUTH_EVENT, normalizeShellMode, normalizeShellView, requestShellView, SHELL_MODE_EVENT, SHELL_VIEW_EVENT, USER_CONFIG_EVENT, type ShellMode, type ShellView } from "./shell-events";
 
 declare const require: (name: string) => { shell?: { openExternal?(url: string): Promise<void> } };
 
@@ -32,6 +32,7 @@ let error = "";
 let dialog: "" | "appearance" | "export" | "invite" = "";
 let browserLogin: { client: DirectFreeFrameClient; deviceCode: string; intervalMs: number; expiresAt: number; userCode: string } | undefined;
 let browserLoginTimer: number | undefined;
+let publishedAuthentication: boolean | undefined;
 
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
 const option = (value: string, label: string, selected: string) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(label)}</option>`;
@@ -125,6 +126,8 @@ function diagnostics(): string {
 }
 
 function render(): void {
+  const authenticated = Boolean(currentUser);
+  if (authenticated !== publishedAuthentication) { publishedAuthentication = authenticated; window.dispatchEvent(new CustomEvent(FREEFRAME_AUTH_EVENT, { detail: authenticated })); }
   if (!root) return;
   root.innerHTML = `<div class="direct-freeframe-surface">${view === "review" ? review() : view === "media" ? media() : diagnostics()}${modal()}</div>`;
 }

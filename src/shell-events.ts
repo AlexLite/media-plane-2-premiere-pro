@@ -4,6 +4,7 @@ export type ShellMode = "plane" | "freeframe";
 export const SHELL_VIEW_EVENT = "plane-freeframe:shell-view";
 export const SHELL_MODE_EVENT = "plane-freeframe:shell-mode";
 export const USER_CONFIG_EVENT = "plane-freeframe:user-config";
+export const FREEFRAME_AUTH_EVENT = "plane-freeframe:auth-state";
 
 export function normalizeShellView(value: unknown): ShellView {
   return value === "media" || value === "diagnostics" || value === "settings" ? value : "review";
