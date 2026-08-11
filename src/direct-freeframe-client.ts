@@ -1,5 +1,5 @@
 import type { ReviewComment, ReviewVersion } from "./domain";
-import { fetchWithTimeout, NetworkTimeoutError } from "./fetch-with-timeout";
+import { fetchWithTimeout } from "./fetch-with-timeout";
 import { FreeFrameError, normalizeFreeFrameApiUrl, parseComment, type ReviewCommentCreateInput } from "./freeframe-client";
 
 export interface DirectTokens { access_token: string; refresh_token: string; token_type: "bearer" }
@@ -46,7 +46,6 @@ function tokens(value: unknown): DirectTokens {
   if (!body || !text(body.access_token) || !text(body.refresh_token) || body.token_type !== "bearer") throw new FreeFrameError("FreeFrame returned an invalid login response", 502);
   return { access_token: body.access_token, refresh_token: body.refresh_token, token_type: "bearer" };
 }
-interface DeviceHttpResponse { status: number; ok: boolean; body: unknown }
 
 /** A hosted FreeFrame UI serves device approval at the origin and its API at /api. */
 export function directApiUrl(serverUrl: string): string {
@@ -122,29 +121,12 @@ export class DirectFreeFrameClient {
   private async publicPost(path: string, body: unknown): Promise<unknown> {
     return this.parse(await fetchWithTimeout(`${this.root}${path}`, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) }));
   }
-  private async deviceRequest(path: string, body: unknown): Promise<DeviceHttpResponse> {
-    const payload = JSON.stringify(body);
-    if (typeof XMLHttpRequest === "undefined") {
-      const response = await fetchWithTimeout(`${this.deviceRoot}${path}`, { method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: payload });
-      const raw = await response.text();
-      let parsed: unknown;
-      if (raw) try { parsed = JSON.parse(raw); } catch { throw new FreeFrameError("FreeFrame returned invalid JSON", 502); }
-      return { status: response.status, ok: response.ok, body: parsed };
-    }
-    return new Promise<DeviceHttpResponse>((resolve, reject) => {
-      const request = new XMLHttpRequest();
-      request.open("POST", `${this.deviceRoot}${path}`, true);
-      request.timeout = 30_000;
-      request.setRequestHeader("Content-Type", "application/json");
-      request.onload = () => {
-        let parsed: unknown;
-        if (request.responseText) try { parsed = JSON.parse(request.responseText); } catch { reject(new FreeFrameError("FreeFrame returned invalid JSON", 502)); return; }
-        resolve({ status: request.status, ok: request.status >= 200 && request.status < 300, body: parsed });
-      };
-      request.onerror = () => reject(new TypeError("FreeFrame network request failed"));
-      request.ontimeout = () => reject(new NetworkTimeoutError(30_000));
-      request.send(payload);
-    });
+  private async deviceRequest(path: string, body: unknown): Promise<{ status: number; ok: boolean; body: unknown }> {
+    const response = await fetchWithTimeout(`${this.deviceRoot}${path}`, { method: "POST", credentials: "omit", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const raw = await response.text();
+    let parsed: unknown;
+    if (raw) try { parsed = JSON.parse(raw); } catch { throw new FreeFrameError("FreeFrame returned invalid JSON", 502); }
+    return { status: response.status, ok: response.ok, body: parsed };
   }
   private async devicePost(path: string, body: unknown): Promise<unknown> {
     const response = await this.deviceRequest(path, body);
