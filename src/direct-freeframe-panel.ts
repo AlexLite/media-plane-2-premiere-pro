@@ -9,7 +9,7 @@ import { PremiereAdapter } from "./premiere";
 import { createCommentAtPlayhead } from "./review-comments";
 import { FREEFRAME_AUTH_EVENT, normalizeShellMode, normalizeShellView, requestShellView, SHELL_MODE_EVENT, SHELL_VIEW_EVENT, USER_CONFIG_EVENT, type ShellMode, type ShellView } from "./shell-events";
 
-declare const require: (name: string) => { shell?: { openExternal?(url: string): Promise<void> } };
+declare const require: (name: string) => { shell?: { openExternal?(url: string, developerText?: string): Promise<string> } };
 
 const root = document.querySelector<HTMLDivElement>("#direct-freeframe-app");
 const store = new DirectFreeFrameStore();
@@ -168,7 +168,8 @@ async function startBrowserLogin(): Promise<void> {
     browserLogin = { client: next, deviceCode: authorization.device_code, userCode: authorization.user_code, intervalMs: authorization.interval * 1000, expiresAt: Date.now() + authorization.expires_in * 1000 };
     const browserUrl = authorization.verification_uri_complete ?? authorization.verification_uri;
     if (!require("uxp").shell?.openExternal) throw new Error("UXP browser launch is unavailable");
-    await require("uxp").shell!.openExternal!(browserUrl);
+    const launchResult = await require("uxp").shell!.openExternal!(browserUrl, "Open FreeFrame in your browser to confirm Premiere access.");
+    if (launchResult) throw new Error(launchResult);
     operations.assertCurrent(generation);
     void pollBrowserLogin(browserLogin, generation);
   } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); }
