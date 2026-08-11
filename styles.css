@@ -336,6 +336,14 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-onboarding p { color: #a5a5aa; font-size: 12px; margin: 0 0 20px; }
 .ff-action-primary { background: #604cf5; border: 1px solid #7563ff; border-radius: 6px; color: #fff; cursor: pointer; display: inline-block; font-size: 13px; font-weight: 600; line-height: 19px; padding: 10px 18px; text-align: center; }
 .ff-action-primary:hover { background: #6e5cff; }
+.ff-action-secondary { border: 1px solid #45454a; border-radius: 6px; color: #c8c8cd; cursor: pointer; display: inline-block; font-size: 12px; margin-top: 8px; padding: 8px 12px; }
+.ff-server-input { color: #9999a0; display: block; font-size: 10px; margin: 0 auto 6px; max-width: 280px; text-align: left; }
+.ff-server-input input { background: #1e1e20 !important; border-color: #3c3c42 !important; display: block; height: 34px !important; margin-top: 5px; width: 100%; }
+.ff-browser-hint { color: #85858c !important; font-size: 11px !important; margin-bottom: 14px !important; }
+.ff-browser-waiting { background: #1b1b1e; border: 1px solid #333339; border-radius: 8px; margin: 0 auto; max-width: 280px; padding: 13px; }
+.ff-browser-waiting strong { color: #e6e6e9; font-size: 12px; }
+.ff-browser-waiting p { color: #9d9da4 !important; font-size: 11px !important; margin: 8px 0 0 !important; }
+.ff-browser-waiting b { color: #f0efff; letter-spacing: 1px; }
 .ff-section-toolbar { align-items: center; display: flex; justify-content: space-between; margin: 6px 0 14px; }
 .ff-section-toolbar h2 { color: #f3f3f4; font-size: 14px; font-weight: 500; margin: 0; }
 .ff-section-toolbar > div { align-items: center; display: flex; gap: 7px; }

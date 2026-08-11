@@ -60,6 +60,18 @@ describe("direct FreeFrame mode", () => {
     expect((fetchMock.mock.calls[3][1] as RequestInit).headers).toMatchObject({ Authorization: "Bearer access-new" });
   });
 
+  it("starts browser device authorization and adopts its approved tokens", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ device_code: "device-secret", user_code: "ABCD-EFGH", verification_uri: "https://freeframe.test/device", verification_uri_complete: "https://freeframe.test/device?code=ABCD-EFGH", expires_in: 600, interval: 5 }))
+      .mockResolvedValueOnce(response({ error: "authorization_pending" }, 202))
+      .mockResolvedValueOnce(response({ access_token: "access-browser", refresh_token: "refresh-browser", token_type: "bearer" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new DirectFreeFrameClient("https://freeframe.test");
+    await expect(client.startDeviceAuthorization()).resolves.toMatchObject({ user_code: "ABCD-EFGH", verification_uri_complete: "https://freeframe.test/device?code=ABCD-EFGH" });
+    await expect(client.pollDeviceAuthorization("device-secret")).resolves.toBeUndefined();
+    await expect(client.pollDeviceAuthorization("device-secret")).resolves.toMatchObject({ refresh_token: "refresh-browser" });
+  });
+
   it("expires the local session when the refreshed token is also rejected", async () => {
     const expired = vi.fn();
     vi.stubGlobal("fetch", vi.fn()

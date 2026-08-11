@@ -1,4 +1,10 @@
 {
+  "browserSignIn": "Sign in in browser",
+  "browserSignInHint": "Your browser will open the FreeFrame sign-in page.",
+  "browserWaiting": "Finish signing in in the browser…",
+  "browserCode": "Confirmation code",
+  "serverAddress": "FreeFrame server address",
+  "browserCancel": "Cancel sign-in",
   "currentSequenceAsset": "Current Sequence Asset",
   "allSequenceAssets": "All Sequence Assets",
   "sequenceNotExported": "Current sequence not yet exported",

@@ -1,4 +1,10 @@
 {
+  "browserSignIn": "Войти в браузере",
+  "browserSignInHint": "Откроется браузер со страницей входа FreeFrame.",
+  "browserWaiting": "Завершите вход в браузере…",
+  "browserCode": "Код подтверждения",
+  "serverAddress": "Адрес сервера FreeFrame",
+  "browserCancel": "Отменить вход",
   "currentSequenceAsset": "Активный ассет секвенции",
   "allSequenceAssets": "Все ассеты секвенции",
   "sequenceNotExported": "Активная секвенция ещё не экспортирована",

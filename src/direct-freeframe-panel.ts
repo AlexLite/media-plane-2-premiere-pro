@@ -9,6 +9,8 @@ import { PremiereAdapter } from "./premiere";
 import { createCommentAtPlayhead } from "./review-comments";
 import { normalizeShellMode, normalizeShellView, requestShellView, SHELL_MODE_EVENT, SHELL_VIEW_EVENT, USER_CONFIG_EVENT, type ShellMode, type ShellView } from "./shell-events";
 
+declare const require: (name: string) => { shell?: { openExternal?(url: string): Promise<void> } };
+
 const root = document.querySelector<HTMLDivElement>("#direct-freeframe-app");
 const store = new DirectFreeFrameStore();
 const premiere = new PremiereAdapter();
@@ -28,6 +30,8 @@ let selectedVersion = "";
 let busy = false;
 let error = "";
 let dialog: "" | "appearance" | "export" | "invite" = "";
+let browserLogin: { client: DirectFreeFrameClient; deviceCode: string; intervalMs: number; expiresAt: number; userCode: string } | undefined;
+let browserLoginTimer: number | undefined;
 
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
 const option = (value: string, label: string, selected: string) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(label)}</option>`;
@@ -42,7 +46,10 @@ function createClient(url: string): DirectFreeFrameClient {
 }
 
 function connectionForm(): string {
-  return `<section class="ff-onboarding"><div class="ff-onboarding-content"><div class="ff-onboarding-mark" aria-hidden="true"><i></i><i></i><i></i></div><h2>${escape(dt("title"))}</h2><p>${escape(dt("loginRequired"))}</p><div class="ff-action-primary" role="button" tabindex="0" data-direct-action="settings">${escape(dt("openSettings"))}</div>${error ? `<p class="error">${escape(error)}</p>` : ""}</div></section>`;
+  const waiting = browserLogin
+    ? `<div class="ff-browser-waiting"><strong>${escape(dt("browserWaiting"))}</strong><p>${escape(dt("browserCode"))}: <b>${escape(browserLogin.userCode)}</b></p><div class="ff-action-secondary" role="button" tabindex="0" data-direct-action="browser-cancel">${escape(dt("browserCancel"))}</div></div>`
+    : `<label class="ff-server-input" for="directServerUrl">${escape(dt("serverAddress"))}<input id="directServerUrl" value="${escape(currentUrl)}" placeholder="https://freeframe.example.com" autocomplete="off"></label><p class="ff-browser-hint">${escape(dt("browserSignInHint"))}</p><div class="ff-action-primary" role="button" tabindex="0" data-direct-action="browser-login">${escape(dt("browserSignIn"))}</div>`;
+  return `<section class="ff-onboarding"><div class="ff-onboarding-content"><div class="ff-onboarding-mark" aria-hidden="true"><i></i><i></i><i></i></div><h2>${escape(dt("title"))}</h2><p>${escape(dt("loginRequired"))}</p>${waiting}${error ? `<p class="error">${escape(error)}</p>` : ""}</div></section>`;
 }
 
 function legacySelectors(): string {
@@ -124,6 +131,45 @@ function render(): void {
 
 function fail(): void { error = dt("requestFailed"); }
 
+function clearBrowserLogin(): void {
+  if (browserLoginTimer !== undefined) window.clearTimeout(browserLoginTimer);
+  browserLoginTimer = undefined;
+  browserLogin = undefined;
+}
+async function pollBrowserLogin(expected: NonNullable<typeof browserLogin>, generation: number): Promise<void> {
+  if (browserLogin !== expected || !operations.current(generation)) return;
+  if (Date.now() >= expected.expiresAt) { clearBrowserLogin(); error = dt("requestFailed"); render(); return; }
+  try {
+    const tokens = await expected.client.pollDeviceAuthorization(expected.deviceCode);
+    operations.assertCurrent(generation);
+    if (!tokens) { browserLoginTimer = window.setTimeout(() => void pollBrowserLogin(expected, generation), expected.intervalMs); return; }
+    clearBrowserLogin();
+    currentUrl = expected.client.root; store.saveUrl(currentUrl);
+    await establish(expected.client, tokens.refresh_token, generation);
+    error = "";
+  } catch (caught) {
+    if (!(caught instanceof DOMException && caught.name === "AbortError")) { clearBrowserLogin(); fail(); }
+  }
+  if (operations.current(generation)) render();
+}
+async function startBrowserLogin(): Promise<void> {
+  const url = root?.querySelector<HTMLInputElement>("#directServerUrl")?.value.trim() ?? currentUrl;
+  const generation = operations.begin(); error = "";
+  try {
+    const normalized = normalizeFreeFrameApiUrl(url);
+    const next = createClient(normalized);
+    const authorization = await next.startDeviceAuthorization();
+    operations.assertCurrent(generation);
+    browserLogin = { client: next, deviceCode: authorization.device_code, userCode: authorization.user_code, intervalMs: authorization.interval * 1000, expiresAt: Date.now() + authorization.expires_in * 1000 };
+    const browserUrl = authorization.verification_uri_complete ?? authorization.verification_uri;
+    if (!require("uxp").shell?.openExternal) throw new Error("UXP browser launch is unavailable");
+    await require("uxp").shell!.openExternal!(browserUrl);
+    operations.assertCurrent(generation);
+    void pollBrowserLogin(browserLogin, generation);
+  } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); }
+  if (operations.current(generation)) render();
+}
+
 async function loadComments(generation: number): Promise<void> {
   const next = client && selectedAsset && selectedVersion ? await client.comments(selectedAsset, selectedVersion) : [];
   operations.assertCurrent(generation); comments = next;
@@ -174,6 +220,7 @@ async function restore(): Promise<void> {
 
 async function logout(): Promise<void> {
   operations.begin();
+  clearBrowserLogin();
   if (currentUrl) await store.clearRefreshToken(currentUrl);
   client?.clearSession(); client = undefined; currentUser = undefined; projects = []; assets = []; versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; error = ""; render();
 }
@@ -200,6 +247,8 @@ root?.addEventListener("click", event => {
   const action = (event.target as HTMLElement).closest<HTMLElement>("[data-direct-action]")?.dataset.directAction;
   if (action === "settings") requestShellView("settings");
   if (action === "logout") void logout();
+  if (action === "browser-login") void startBrowserLogin();
+  if (action === "browser-cancel") { operations.begin(); clearBrowserLogin(); error = ""; render(); }
   if (action === "refresh") void (async () => { const generation = operations.begin(); busy = true; error = ""; render(); try { await loadProjects(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })();
   if (action === "comment") void comment();
   if (action === "appearance" || action === "export" || action === "invite") { dialog = action === "appearance" ? "appearance" : action === "export" ? "export" : "invite"; render(); }
@@ -223,7 +272,7 @@ window.addEventListener(SHELL_VIEW_EVENT, event => { view = normalizeShellView((
 window.addEventListener(INTERFACE_LOCALE_EVENT, render);
 window.addEventListener(USER_CONFIG_EVENT, event => {
   if ((event as CustomEvent<unknown>).detail !== "freeframe") return;
-  client?.clearSession(); client = undefined; currentUser = undefined; currentUrl = store.getUrl();
+  clearBrowserLogin(); client?.clearSession(); client = undefined; currentUser = undefined; currentUrl = store.getUrl();
   projects = []; assets = []; versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = "";
   void restore();
 });

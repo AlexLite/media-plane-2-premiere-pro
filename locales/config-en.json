@@ -1,4 +1,6 @@
 {
+  "browserSignIn": "Continue in browser",
+  "browserSignInHint": "The sign-in page opens from the FreeFrame workspace after saving this server address.",
   "title": "User settings",
   "intro": "Connections and credentials for this Premiere user.",
   "security": "Secrets are stored in Adobe UXP secure storage and are never written to project files.",

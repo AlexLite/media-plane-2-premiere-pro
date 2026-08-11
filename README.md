@@ -27,7 +27,7 @@ This branch intentionally replaces the original Plane-comments-only prototype. I
 - Compact version-first review UI inspired by the interaction model of Frame.io without copying its branding or pixel design.
 - EN/RU locale parity and hardcoded UI-text scanners covering every panel entrypoint.
 
-The runtime must never use ordinary Plane comments as media-review comments, parse semantic timecodes from Plane discussion, persist a FreeFrame token or presigned URL, or accept a user-entered FreeFrame API URL.
+The runtime must never use ordinary Plane comments as media-review comments, parse semantic timecodes from Plane discussion, persist a FreeFrame token or presigned URL. Plane-connected work always uses Plane-controlled endpoint discovery; the separate direct-FreeFrame workspace may store a user-provided HTTPS server address locally, but keeps the issued credential only in UXP secure storage.
 
 ## Contract and host dependencies
 
@@ -36,6 +36,7 @@ The runtime must never use ordinary Plane comments as media-review comments, par
 3. Selected-version canonical timing requires FreeFrame draft PR [AlexLite/freeframe-media-plane-review#20](https://github.com/AlexLite/freeframe-media-plane-review/pull/20). The existing worker persists ffprobe video metadata and bootstrap returns optional `duration_seconds`, `fps_numerator`, and `fps_denominator` per version. No migration or new endpoint is introduced.
 4. Premiere UXP 25.6 documents `Sequence.getPlayerPosition()`, `Sequence.getEndTime()`, `Markers.getMarkers()`, marker Actions, `TickTime.createWithSeconds()`, `Project.lockedAccess()`, and `Project.executeTransaction()`.
 5. The current FreeFrame resolve endpoint toggles resolved state, so resolve/reopen always reconciles from the confirmed server response.
+6. Direct-FreeFrame browser sign-in requires a device-authorization contract on the chosen HTTPS FreeFrame server: `POST /auth/device/start` accepts `{ "client_id": "premiere-uxp" }` and returns `device_code`, `user_code`, `verification_uri`, optional `verification_uri_complete`, `expires_in`, and `interval`; `POST /auth/device/poll` accepts `{ "client_id": "premiere-uxp", "device_code": "…" }`, returns `202` while authorization is pending, and returns the existing access/refresh token pair only after approval. The plugin opens the verification URL in the system browser and never receives a browser password.
 
 ## Review comments, timing, and markers
 

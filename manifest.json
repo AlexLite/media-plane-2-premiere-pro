@@ -6,5 +6,5 @@
   "main": "index.html",
   "host": [{ "app": "premierepro", "minVersion": "25.6.0" }],
   "entrypoints": [{ "type": "panel", "id": "planeFreeFrameReview", "label": { "default": "Plane × FreeFrame Review" }, "minimumSize": { "width": 320, "height": 420 }, "preferredDockedSize": { "width": 390, "height": 640 } }],
-  "requiredPermissions": { "network": { "domains": ["https://*"] }, "localFileSystem": "request" }
+  "requiredPermissions": { "network": { "domains": ["https://*"] }, "localFileSystem": "request", "launchProcess": { "schemes": ["https"] } }
 }

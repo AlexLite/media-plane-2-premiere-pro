@@ -4,7 +4,7 @@ import { normalizeFreeFrameApiUrl } from "./freeframe-client";
 import { INTERFACE_LOCALE_EVENT } from "./locale-preference";
 import { BindingStore, DirectFreeFrameStore } from "./persistence";
 import { PlaneClient } from "./plane-client";
-import { SHELL_VIEW_EVENT, USER_CONFIG_EVENT } from "./shell-events";
+import { requestShellView, SHELL_VIEW_EVENT, USER_CONFIG_EVENT } from "./shell-events";
 
 const root = document.querySelector<HTMLDivElement>("#user-config-app");
 const planeStore = new BindingStore();
@@ -30,9 +30,19 @@ function createFreeFrameClient(url: string): DirectFreeFrameClient {
   });
 }
 
-function render(): void {
+function legacyRender(): void {
   if (!root) return;
   root.innerHTML = `<div class="config-page"><div class="config-heading"><h2>${escape(ct("title"))}</h2><p>${escape(ct("intro"))}</p></div><div class="config-security">${escape(ct("security"))}</div><section class="config-card"><div class="config-card-head"><div><h3>${escape(ct("planeTitle"))}</h3><p>${escape(ct("planeIntro"))}</p></div>${status(Boolean(planeIdentity), planeIdentity)}</div><div class="config-fields"><label for="configPlaneUrl">${escape(ct("planeUrl"))}</label><input class="uxp-input" id="configPlaneUrl" type="text" value="${escape(planeUrl)}" placeholder="https://plane.example.com" autocomplete="off"/><p class="field-hint">${escape(ct("httpsHint"))}</p><label for="configPlaneToken">${escape(ct("planeToken"))}</label><input class="uxp-input" id="configPlaneToken" type="password" placeholder="${escape(ct("tokenPlaceholder"))}" autocomplete="off"/><button class="config-primary" data-config-action="plane-save"${busy ? " disabled" : ""}>${escape(busy === "plane" ? ct("checking") : ct("validateSave"))}</button>${message(planeMessage, "plane")}</div></section><section class="config-card"><div class="config-card-head"><div><h3>${escape(ct("freeframeTitle"))}</h3><p>${escape(ct("freeframeIntro"))}</p></div>${status(Boolean(freeFrameUser), freeFrameUser?.email)}</div><div class="config-fields"><label for="configFreeFrameUrl">${escape(ct("freeframeUrl"))}</label><input class="uxp-input" id="configFreeFrameUrl" type="text" value="${escape(freeFrameUrl)}" placeholder="https://freeframe.example.com" autocomplete="off"/><p class="field-hint">${escape(ct("httpsHint"))}</p>${freeFrameUser ? `<button class="config-secondary" data-config-action="freeframe-logout"${busy ? " disabled" : ""}>${escape(ct("signOut"))}</button>` : `<label for="configFreeFrameEmail">${escape(ct("email"))}</label><input class="uxp-input" id="configFreeFrameEmail" type="text" autocomplete="off" placeholder="you@example.com"/><label for="configFreeFramePassword">${escape(ct("password"))}</label><input class="uxp-input" id="configFreeFramePassword" type="password" autocomplete="off"/><button class="config-primary" data-config-action="freeframe-login"${busy ? " disabled" : ""}>${escape(busy === "freeframe" ? ct("checking") : ct("signIn"))}</button>`}${message(freeFrameMessage, "freeframe")}</div></section></div>`;
+}
+
+function render(): void {
+  if (!root) return;
+  const plane = `<section class="config-card"><div class="config-card-head"><div><h3>${escape(ct("planeTitle"))}</h3><p>${escape(ct("planeIntro"))}</p></div>${status(Boolean(planeIdentity), planeIdentity)}</div><div class="config-fields"><label for="configPlaneUrl">${escape(ct("planeUrl"))}</label><input class="uxp-input" id="configPlaneUrl" type="text" value="${escape(planeUrl)}" placeholder="https://plane.example.com" autocomplete="off"/><p class="field-hint">${escape(ct("httpsHint"))}</p><label for="configPlaneToken">${escape(ct("planeToken"))}</label><input class="uxp-input" id="configPlaneToken" type="password" placeholder="${escape(ct("tokenPlaceholder"))}" autocomplete="off"/><button class="config-primary" data-config-action="plane-save"${busy ? " disabled" : ""}>${escape(busy === "plane" ? ct("checking") : ct("validateSave"))}</button>${message(planeMessage, "plane")}</div></section>`;
+  const freeFrameAction = freeFrameUser
+    ? `<button class="config-secondary" data-config-action="freeframe-logout"${busy ? " disabled" : ""}>${escape(ct("signOut"))}</button>`
+    : `<p class="field-hint">${escape(ct("browserSignInHint"))}</p><button class="config-primary" data-config-action="freeframe-browser"${busy ? " disabled" : ""}>${escape(ct("browserSignIn"))}</button>`;
+  const freeFrame = `<section class="config-card"><div class="config-card-head"><div><h3>${escape(ct("freeframeTitle"))}</h3><p>${escape(ct("freeframeIntro"))}</p></div>${status(Boolean(freeFrameUser), freeFrameUser?.email)}</div><div class="config-fields"><label for="configFreeFrameUrl">${escape(ct("freeframeUrl"))}</label><input class="uxp-input" id="configFreeFrameUrl" type="text" value="${escape(freeFrameUrl)}" placeholder="https://freeframe.example.com" autocomplete="off"/><p class="field-hint">${escape(ct("httpsHint"))}</p>${freeFrameAction}${message(freeFrameMessage, "freeframe")}</div></section>`;
+  root.innerHTML = `<div class="config-page"><div class="config-heading"><h2>${escape(ct("title"))}</h2><p>${escape(ct("intro"))}</p></div><div class="config-security">${escape(ct("security"))}</div>${plane}${freeFrame}</div>`;
 }
 
 async function restore(): Promise<void> {
@@ -82,6 +92,17 @@ async function loginFreeFrame(): Promise<void> {
   finally { busy = ""; render(); }
 }
 
+function useFreeFrameBrowserLogin(): void {
+  const url = root?.querySelector<HTMLInputElement>("#configFreeFrameUrl")?.value.trim() ?? "";
+  try {
+    freeFrameUrl = normalizeFreeFrameApiUrl(url);
+    freeFrameStore.saveUrl(freeFrameUrl);
+    freeFrameMessage = "saved";
+    window.dispatchEvent(new CustomEvent(USER_CONFIG_EVENT, { detail: "freeframe" }));
+    requestShellView("review");
+  } catch { freeFrameMessage = "error"; render(); }
+}
+
 async function logoutFreeFrame(): Promise<void> {
   if (freeFrameUrl) await freeFrameStore.clearRefreshToken(freeFrameUrl);
   freeFrameClient?.clearSession(); freeFrameClient = undefined; freeFrameUser = undefined; freeFrameMessage = "";
@@ -92,6 +113,7 @@ root?.addEventListener("click", event => {
   const action = (event.target as HTMLElement).closest<HTMLElement>("[data-config-action]")?.dataset.configAction;
   if (action === "plane-save") void savePlane();
   if (action === "freeframe-login") void loginFreeFrame();
+  if (action === "freeframe-browser") useFreeFrameBrowserLogin();
   if (action === "freeframe-logout") void logoutFreeFrame();
 });
 window.addEventListener(INTERFACE_LOCALE_EVENT, render);
