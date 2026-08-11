@@ -47,6 +47,19 @@ let publishedAuthentication: boolean | undefined;
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
 const option = (value: string, label: string, selected: string) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(label)}</option>`;
 const initials = (value: string) => value.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "FF";
+const icon = (name: "grid" | "fields" | "sort" | "share" | "upload" | "home" | "project" | "play") => {
+  const paths: Record<string, string> = {
+    grid: '<rect x="2" y="2" width="4" height="4" rx=".5"/><rect x="10" y="2" width="4" height="4" rx=".5"/><rect x="2" y="10" width="4" height="4" rx=".5"/><rect x="10" y="10" width="4" height="4" rx=".5"/>',
+    fields: '<path d="M3 3h10M3 8h10M3 13h10"/><circle cx="5" cy="3" r="1" fill="currentColor"/><circle cx="10" cy="8" r="1" fill="currentColor"/><circle cx="7" cy="13" r="1" fill="currentColor"/>',
+    sort: '<path d="M3 4h10M3 8h7M3 12h4"/><path d="m11 10 2 2 2-2"/>',
+    share: '<path d="M5 9v4h8V9M8 7l2-2 2 2M10 5v7"/>',
+    upload: '<path d="M3 10v3h10v-3M6 6l2-2 2 2M8 4v7"/>',
+    home: '<path d="m2 7 6-5 6 5v6H9v-4H7v4H2z"/>',
+    project: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 3V2h6v1M5 7h6M5 10h3"/>',
+    play: '<path d="m5 3 7 5-7 5z"/>',
+  };
+  return `<svg class="ff-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">${paths[name]}</svg>`;
+};
 
 function createClient(url: string): DirectFreeFrameClient {
   return new DirectFreeFrameClient(directApiUrl(url), {
@@ -115,14 +128,15 @@ function sequencePage(): string {
 
 function browsePage(): string {
   const project = projects.find(item => item.id === selectedProject);
-  const toolbar = `<div class="ff-browse-toolbar"><div class="ff-toolbar-control" role="button" tabindex="0" title="${escape(dt("appearance"))}" data-direct-action="appearance"><span class="ff-toolbar-icon">▦</span><span class="ff-toolbar-label">${escape(dt("appearance"))}</span></div><div class="ff-toolbar-control" role="button" tabindex="0" title="${escape(dt("fields"))}"><span class="ff-toolbar-icon">☷</span><span class="ff-toolbar-label">${escape(dt("fields"))}</span></div><div class="ff-toolbar-control" role="button" tabindex="0" title="${escape(dt("sortBy"))}"><span class="ff-toolbar-icon">≡</span><span class="ff-toolbar-label">${escape(dt("sortBy"))}: ${escape(dt("custom"))}</span></div><span class="ff-toolbar-spacer"></span><div class="ff-toolbar-control ff-share-control" role="button" tabindex="0" title="${escape(dt("share"))}" data-direct-action="invite"><span class="ff-toolbar-icon">↗</span><span class="ff-toolbar-label">${escape(dt("share"))}</span></div><div class="ff-toolbar-upload" role="button" tabindex="0" title="${escape(dt("exportSequence"))}" data-direct-action="export"><span class="ff-toolbar-icon">↑</span><span class="ff-toolbar-label">${escape(dt("exportSequence"))}</span></div><div class="ff-toolbar-add" role="button" tabindex="0" title="${escape(dt("exportSequence"))}" data-direct-action="export">+</div></div>`;
+  const toolbar = `<div class="ff-browse-toolbar"><div class="ff-toolbar-control" role="button" tabindex="0" title="${escape(dt("appearance"))}" data-direct-action="appearance"><span class="ff-toolbar-icon">${icon("grid")}</span><span class="ff-toolbar-label">${escape(dt("appearance"))}</span></div><div class="ff-toolbar-control" role="button" tabindex="0" title="${escape(dt("fields"))}"><span class="ff-toolbar-icon">${icon("fields")}</span><span class="ff-toolbar-label">${escape(dt("fields"))}</span></div><div class="ff-toolbar-control" role="button" tabindex="0" title="${escape(dt("sortBy"))}"><span class="ff-toolbar-icon">${icon("sort")}</span><span class="ff-toolbar-label">${escape(dt("sortBy"))}: ${escape(dt("custom"))}</span></div><span class="ff-toolbar-spacer"></span><div class="ff-toolbar-control ff-share-control" role="button" tabindex="0" title="${escape(dt("share"))}" data-direct-action="invite"><span class="ff-toolbar-icon">${icon("share")}</span><span class="ff-toolbar-label">${escape(dt("share"))}</span></div><div class="ff-toolbar-upload" role="button" tabindex="0" title="${escape(dt("exportSequence"))}" data-direct-action="export"><span class="ff-toolbar-icon">${icon("upload")}</span><span class="ff-toolbar-label">${escape(dt("exportSequence"))}</span></div><div class="ff-toolbar-add" role="button" tabindex="0" title="${escape(dt("exportSequence"))}" data-direct-action="export">+</div></div>`;
   const breadcrumb = selectedProject
-    ? `<span class="ff-breadcrumb-link" role="button" tabindex="0" data-direct-project="">⌂</span><span>/</span><strong>${escape(project?.name ?? dt("title"))}</strong>`
-    : `<span>⌂</span><span>/</span><strong>${escape(dt("title"))}</strong>`;
+    ? `<span class="ff-breadcrumb-link" role="button" tabindex="0" data-direct-project="">${icon("home")}</span><span>/</span><strong>${escape(project?.name ?? dt("title"))}</strong>`
+    : `<span>${icon("home")}</span><span>/</span><strong>${escape(dt("title"))}</strong>`;
+  const projectContext = selectedProject && project ? `<div class="ff-project-context"><span class="ff-project-context-mark">${icon("project")}</span><div><strong>${escape(project.name)}</strong><small>${escape(`${project.asset_count} ${dt("assets")}${project.role ? ` · ${project.role}` : ""}`)}</small></div></div>` : "";
   const projectsView = projects.length
-    ? `<div class="ff-project-grid">${projects.map(item => `<div class="ff-project-card" role="button" tabindex="0" data-direct-project="${escape(item.id)}"><span class="ff-project-mark">▦</span><strong>${escape(item.name)}</strong><small>${escape(item.description ?? `${item.asset_count} ${dt("assets")}`)}</small></div>`).join("")}</div>`
+    ? `<div class="ff-project-grid">${projects.map(item => `<div class="ff-project-card" role="button" tabindex="0" title="${escape(item.description ?? item.name)}" data-direct-project="${escape(item.id)}"><span class="ff-project-mark">${icon("project")}</span><strong>${escape(item.name)}</strong><small>${escape(`${item.asset_count} ${dt("assets")}${item.role ? ` · ${item.role}` : ""}`)}</small></div>`).join("")}</div>`
     : `<div class="ff-empty-state"><div class="ff-empty-glyph">▦</div><p>${escape(dt("emptyProjects"))}</p></div>`;
-  return `<div class="ff-page ff-browse-page"><div class="ff-breadcrumb">${breadcrumb}</div>${toolbar}${selectedProject ? assetTiles() : projectsView}</div>`;
+  return `<div class="ff-page ff-browse-page"><div class="ff-breadcrumb">${breadcrumb}</div>${projectContext}${toolbar}${selectedProject ? assetTiles() : projectsView}</div>`;
 }
 
 function modal(): string {

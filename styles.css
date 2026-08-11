@@ -376,6 +376,12 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-sequence-item small { color: #8d8d94; margin-top: 3px; }
 .ff-breadcrumb { align-items: center; border-bottom: 1px solid #29292c; color: #98989c; display: flex; gap: 9px; margin: -14px -7px 12px; padding: 11px 12px; }
 .ff-breadcrumb strong { color: #dedee0; font-size: 12px; }
+.ff-icon { fill: none; height: 16px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; vertical-align: middle; width: 16px; }
+.ff-project-context { align-items: center; background: #1b1b1e; border: 1px solid #2b2b30; border-radius: 7px; display: flex; gap: 9px; margin: 0 0 10px; min-height: 48px; padding: 7px 10px; }
+.ff-project-context-mark { align-items: center; background: #33333b; border-radius: 6px; color: #b8b8c3; display: flex; height: 30px; justify-content: center; width: 30px; }
+.ff-project-context strong, .ff-project-context small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ff-project-context strong { color: #eeeeF1; font-size: 12px; }
+.ff-project-context small { color: #898991; font-size: 10px; margin-top: 2px; }
 .ff-browse-toolbar { align-items: center; border-bottom: 1px solid #29292c; display: flex; gap: 4px; margin: 0 -7px 18px; min-height: 34px; padding: 0 8px 12px; }
 .ff-toolbar-control { border: 1px solid transparent; border-radius: 5px; box-sizing: border-box; color: #b9b9be; cursor: pointer; font-size: 11px; font-weight: 600; line-height: 27px; padding: 0 8px; white-space: nowrap; }
 .ff-toolbar-control:hover { background: #2b2b2f; border-color: #38383d; color: #f0f0f2; }
@@ -392,6 +398,7 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-project-card strong { color: #e7e7ea; font-size: 12px; margin-top: 13px; }
 .ff-project-card small { color: #929299; font-size: 10px; margin-top: 4px; }
 .ff-project-mark { align-items: center; background: #2d2d33; border-radius: 5px; color: #9294a0; display: flex; font-size: 17px; height: 32px; justify-content: center; width: 36px; }
+.ff-project-mark .ff-icon { height: 17px; width: 17px; }
 .ff-breadcrumb-link { color: #c9c9cf; cursor: pointer; }
 @media (max-width: 700px) {
   .ff-browse-toolbar { gap: 2px; margin-left: -4px; margin-right: -4px; padding-left: 4px; padding-right: 4px; }
