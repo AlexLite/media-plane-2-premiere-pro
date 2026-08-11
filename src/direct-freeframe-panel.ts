@@ -1,5 +1,5 @@
 import type { ReviewComment, SequenceInfo } from "./domain";
-import { ACTIVE_CONTEXT_EVENT } from "./active-context";
+import { ACTIVE_CONTEXT_EVENT, activeContextKey } from "./active-context";
 import { DirectFreeFrameClient, directApiUrl, directReviewVersion, type DirectAsset, type DirectProject, type DirectUser, type DirectVersion } from "./direct-freeframe-client";
 import { dt } from "./direct-locale";
 import { FreeFrameError, normalizeFreeFrameApiUrl } from "./freeframe-client";
@@ -34,6 +34,8 @@ let activeSequence: SequenceInfo | undefined;
 let activeSequenceAsset: DirectAsset | undefined;
 const assetCache = new Map<string, DirectAsset>();
 let activeSequenceRequest = 0;
+let activeSequenceContextKey = "";
+let activeSequenceTimer: number | undefined;
 let exportFile: SelectedMediaFile | undefined;
 let exportProject = "";
 let exportProgress: number | undefined;
@@ -217,26 +219,25 @@ function cacheAssets(next: DirectAsset[]): void {
   for (const asset of next) assetCache.set(asset.id, asset);
 }
 
-function sameSequenceName(asset: DirectAsset, sequence: SequenceInfo): boolean {
-  return asset.name.trim().localeCompare(sequence.name.trim(), undefined, { sensitivity: "accent" }) === 0;
-}
-
 /**
  * Frame.io's Current Sequence section follows Premiere's active sequence, not
- * the last asset selected in Browse.  FreeFrame will eventually receive this
- * relation from the export endpoint; exact-name discovery only restores links
- * for assets uploaded before that endpoint existed.
+ * the last asset selected in Browse. A binding is created only by an explicit
+ * upload/link action; a matching name is never treated as proof of identity.
  */
 async function refreshActiveSequence(): Promise<void> {
   const request = ++activeSequenceRequest;
   const current = await premiere.context();
   if (request !== activeSequenceRequest) return;
+  const nextContextKey = activeContextKey(current);
   if (current.status !== "ready" || !client || !currentUrl || !currentUser) {
+    activeSequenceContextKey = current.status === "ready" ? "" : nextContextKey;
     activeSequence = undefined;
     activeSequenceAsset = undefined;
     render();
     return;
   }
+  if (nextContextKey === activeSequenceContextKey && activeSequence) return;
+  activeSequenceContextKey = nextContextKey;
 
   const sequence = current.sequence;
   let binding = store.getSequenceBinding(currentUrl, sequence.projectGuid, sequence.id);
@@ -246,19 +247,6 @@ async function refreshActiveSequence(): Promise<void> {
     if (request !== activeSequenceRequest) return;
     cacheAssets(next);
     linked = next.find(asset => asset.id === binding!.assetId);
-  }
-  if (!binding) {
-    for (const project of projects) {
-      const next = await client.assets(project.id);
-      if (request !== activeSequenceRequest) return;
-      cacheAssets(next);
-      const candidate = next.find(asset => sameSequenceName(asset, sequence));
-      if (!candidate) continue;
-      binding = { serverUrl: currentUrl, projectGuid: sequence.projectGuid, sequenceId: sequence.id, projectId: project.id, assetId: candidate.id };
-      store.saveSequenceBinding(binding);
-      linked = candidate;
-      break;
-    }
   }
   if (request !== activeSequenceRequest) return;
   activeSequence = sequence;
@@ -319,7 +307,7 @@ async function logout(): Promise<void> {
   operations.begin();
   clearBrowserLogin();
   if (currentUrl) await store.clearRefreshToken(currentUrl);
-  client?.clearSession(); client = undefined; currentUser = undefined; projects = []; assets = []; assetCache.clear(); versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; activeSequence = undefined; activeSequenceAsset = undefined; activeSequenceRequest++; error = ""; render();
+  client?.clearSession(); client = undefined; currentUser = undefined; projects = []; assets = []; assetCache.clear(); versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; activeSequence = undefined; activeSequenceAsset = undefined; activeSequenceContextKey = ""; activeSequenceRequest++; error = ""; render();
 }
 
 async function comment(): Promise<void> {
@@ -433,9 +421,13 @@ window.addEventListener(INTERFACE_LOCALE_EVENT, render);
 window.addEventListener(USER_CONFIG_EVENT, event => {
   if ((event as CustomEvent<unknown>).detail !== "freeframe") return;
   clearBrowserLogin(); client?.clearSession(); client = undefined; currentUser = undefined; currentUrl = store.getUrl();
-  projects = []; assets = []; assetCache.clear(); versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; activeSequence = undefined; activeSequenceAsset = undefined; activeSequenceRequest++;
+  projects = []; assets = []; assetCache.clear(); versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; activeSequence = undefined; activeSequenceAsset = undefined; activeSequenceContextKey = ""; activeSequenceRequest++;
   void restore();
 });
 
 render();
 void restore();
+activeSequenceTimer = window.setInterval(() => {
+  if (mode === "freeframe" && currentUser && !busy) void refreshActiveSequence();
+}, 3000);
+window.addEventListener("unload", () => { if (activeSequenceTimer !== undefined) window.clearInterval(activeSequenceTimer); });

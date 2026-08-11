@@ -4,7 +4,9 @@ const TOKEN_PREFIX = "plane-token:";
 const PLANE_URL_KEY = "plane-user-config-url-v1";
 const DIRECT_URL_KEY = "freeframe-direct-url-v1";
 const DIRECT_REFRESH_PREFIX = "freeframe-refresh:";
-const DIRECT_SEQUENCE_BINDINGS_KEY = "freeframe-direct-sequence-bindings-v1";
+// v2 intentionally drops legacy name-based auto-bindings. Only explicit
+// upload/link actions may restore the current sequence asset.
+const DIRECT_SEQUENCE_BINDINGS_KEY = "freeframe-direct-sequence-bindings-v2";
 
 export interface DirectSequenceBinding {
   serverUrl: string;
