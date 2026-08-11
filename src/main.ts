@@ -477,7 +477,7 @@ async function runTransfer(source: SelectedMediaFile | ((signal: AbortSignal) =>
   } finally { transferController = undefined; render(); }
 }
 function uploadSelectedMedia(): void { if (selectedMedia) void runTransfer(selectedMedia); }
-function exportAndUpload(): void { if (preparedExport) void runTransfer(signal => directExporter.export(preparedExport!, { signal })); }
+function exportAndUpload(): void { if (preparedExport) void runTransfer(async signal => mediaFiles.read(await directExporter.export(preparedExport!, { signal }), "exported", signal)); }
 function cancelTransfer(): void { transferController?.cancel(); }
 
 async function start(): Promise<void> {

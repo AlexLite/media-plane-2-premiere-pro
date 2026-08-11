@@ -43,6 +43,9 @@ export class PremiereAdapter {
     const context = await this.context();
     return context.status === "ready" ? context.sequence : undefined;
   }
+  async hostSequence(expectedProjectGuid: string, expectedSequenceId: string): Promise<any> {
+    return (await this.active(expectedProjectGuid, expectedSequenceId)).sequence;
+  }
   async playhead(expectedProjectGuid: string, expectedSequenceId: string): Promise<PremierePlayhead> {
     const { sequence } = await this.active(expectedProjectGuid, expectedSequenceId);
     if (typeof sequence.getPlayerPosition !== "function") throw new Error("Premiere playhead API is unavailable");

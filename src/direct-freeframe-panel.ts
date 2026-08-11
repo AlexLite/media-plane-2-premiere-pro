@@ -1,5 +1,5 @@
 import type { ReviewComment, SequenceInfo } from "./domain";
-import { ACTIVE_CONTEXT_EVENT } from "./active-context";
+import { ACTIVE_CONTEXT_EVENT, activeContextKey } from "./active-context";
 import { DirectFreeFrameClient, directApiUrl, directReviewVersion, type DirectAsset, type DirectProject, type DirectUser, type DirectVersion } from "./direct-freeframe-client";
 import { dt } from "./direct-locale";
 import { FreeFrameError, normalizeFreeFrameApiUrl } from "./freeframe-client";
@@ -7,6 +7,7 @@ import { INTERFACE_LOCALE_EVENT } from "./locale-preference";
 import { OperationGeneration } from "./operation-generation";
 import { DirectFreeFrameStore } from "./persistence";
 import { PremiereAdapter } from "./premiere";
+import { PremiereDirectExporter } from "./premiere-export";
 import { createCommentAtPlayhead } from "./review-comments";
 import { FREEFRAME_AUTH_EVENT, normalizeShellMode, normalizeShellView, requestShellView, SHELL_MODE_EVENT, SHELL_VIEW_EVENT, USER_CONFIG_EVENT, type ShellMode, type ShellView } from "./shell-events";
 import { UxpMediaFiles, type SelectedMediaFile } from "./uxp-media";
@@ -16,6 +17,7 @@ declare const require: (name: string) => { shell?: { openExternal?(url: string, 
 const root = document.querySelector<HTMLDivElement>("#direct-freeframe-app");
 const store = new DirectFreeFrameStore();
 const premiere = new PremiereAdapter();
+const directExporter = new PremiereDirectExporter();
 const mediaFiles = new UxpMediaFiles();
 const operations = new OperationGeneration();
 let mode: ShellMode = normalizeShellMode(document.body.dataset.activeMode);
@@ -34,7 +36,11 @@ let activeSequence: SequenceInfo | undefined;
 let activeSequenceAsset: DirectAsset | undefined;
 const assetCache = new Map<string, DirectAsset>();
 let activeSequenceRequest = 0;
+let activeSequenceContextKey = "";
+let activeSequenceTimer: number | undefined;
 let exportFile: SelectedMediaFile | undefined;
+let exportPreset: import("./uxp-media").UxpFileEntry | undefined;
+let exportOutput: import("./uxp-media").UxpFileEntry | undefined;
 let exportProject = "";
 let exportProgress: number | undefined;
 let busy = false;
@@ -47,6 +53,19 @@ let publishedAuthentication: boolean | undefined;
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
 const option = (value: string, label: string, selected: string) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(label)}</option>`;
 const initials = (value: string) => value.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "FF";
+const icon = (name: "grid" | "fields" | "sort" | "share" | "upload" | "home" | "project" | "play") => {
+  const paths: Record<string, string> = {
+    grid: '<rect x="2" y="2" width="4" height="4" rx=".5"/><rect x="10" y="2" width="4" height="4" rx=".5"/><rect x="2" y="10" width="4" height="4" rx=".5"/><rect x="10" y="10" width="4" height="4" rx=".5"/>',
+    fields: '<path d="M3 3h10M3 8h10M3 13h10"/><circle cx="5" cy="3" r="1" fill="currentColor"/><circle cx="10" cy="8" r="1" fill="currentColor"/><circle cx="7" cy="13" r="1" fill="currentColor"/>',
+    sort: '<path d="M3 4h10M3 8h7M3 12h4"/><path d="m11 10 2 2 2-2"/>',
+    share: '<path d="M5 9v4h8V9M8 7l2-2 2 2M10 5v7"/>',
+    upload: '<path d="M3 10v3h10v-3M6 6l2-2 2 2M8 4v7"/>',
+    home: '<path d="m2 7 6-5 6 5v6H9v-4H7v4H2z"/>',
+    project: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 3V2h6v1M5 7h6M5 10h3"/>',
+    play: '<path d="m5 3 7 5-7 5z"/>',
+  };
+  return `<svg class="ff-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">${paths[name]}</svg>`;
+};
 
 function createClient(url: string): DirectFreeFrameClient {
   return new DirectFreeFrameClient(directApiUrl(url), {
@@ -101,8 +120,8 @@ function previousMedia(): string { return currentUser ? selectors() : connection
 
 function assetTiles(): string {
   if (!selectedProject) return `<div class="ff-empty-state"><div class="ff-empty-glyph">▦</div><p>${escape(dt("selectProjectToBrowse"))}</p></div>`;
-  if (!assets.length) return `<div class="ff-empty-state"><div class="ff-empty-glyph">▦</div><p>${escape(dt("emptyAssets"))}</p></div>`;
-  return `<div class="ff-asset-list">${assets.map(asset => `<button class="ff-asset-tile${asset.id === selectedAsset ? " selected" : ""}" data-direct-asset="${escape(asset.id)}"><span class="ff-asset-thumb">▶</span><span class="ff-asset-name">${escape(asset.name)}</span><span class="ff-asset-meta">${escape(asset.latest_version ? `v${asset.latest_version.version_number}` : dt("missing"))}</span></button>`).join("")}</div>`;
+  if (!assets.length) return `<div class="ff-empty-state ff-empty-dropzone" data-testid="finder-results-message-empty"><div class="ff-empty-glyph">⇧</div><p>${escape(activeSequence ? dt("sequenceNotExported") : dt("emptyAssets"))}</p>${activeSequence ? `<button class="ff-empty-action" data-testid="empty-folder-export-cta" data-direct-action="export">${escape(dt("exportSequence"))}</button>` : ""}</div>`;
+  return `<div class="ff-asset-list" data-testid="assets-grid">${assets.map(asset => { const version = asset.latest_version; const status = version?.processing_status ?? dt("missing"); return `<button class="ff-asset-tile${asset.id === selectedAsset ? " selected" : ""}" data-direct-asset="${escape(asset.id)}"><span class="ff-asset-thumb">${icon("play")}</span><span class="ff-asset-name">${escape(asset.name)}</span><span class="ff-asset-meta">${escape(version ? `v${version.version_number} · ${status}` : status)}</span></button>`; }).join("")}</div>`;
 }
 
 function sequencePage(): string {
@@ -115,14 +134,15 @@ function sequencePage(): string {
 
 function browsePage(): string {
   const project = projects.find(item => item.id === selectedProject);
-  const toolbar = `<div class="ff-browse-toolbar"><div class="ff-toolbar-control" role="button" tabindex="0" data-direct-action="appearance">▦ ${escape(dt("appearance"))}</div><div class="ff-toolbar-control" role="button" tabindex="0">☷ ${escape(dt("fields"))}</div><div class="ff-toolbar-control" role="button" tabindex="0">≡ ${escape(dt("sortBy"))}: ${escape(dt("custom"))}</div><span class="ff-toolbar-spacer"></span><div class="ff-toolbar-control" role="button" tabindex="0" data-direct-action="invite">${escape(dt("share"))}</div><div class="ff-toolbar-add" role="button" tabindex="0" data-direct-action="export">+</div></div>`;
+  const toolbar = `<div class="ff-browse-toolbar" data-testid="finder-menu-bar"><div class="ff-toolbar-control" role="button" tabindex="0" title="${escape(dt("appearance"))}" data-testid="menu-bar-button--Appearance" data-direct-action="appearance"><span class="ff-toolbar-icon">${icon("grid")}</span><span class="ff-toolbar-label">${escape(dt("appearance"))}</span></div><div class="ff-toolbar-control" role="button" tabindex="0" title="${escape(dt("fields"))}" data-testid="menu-bar-button--Fields"><span class="ff-toolbar-icon">${icon("fields")}</span><span class="ff-toolbar-label">${escape(dt("fields"))}</span></div><div class="ff-toolbar-control" role="button" tabindex="0" title="${escape(dt("sortBy"))}" data-testid="menu-bar-button--Sort"><span class="ff-toolbar-icon">${icon("sort")}</span><span class="ff-toolbar-label">${escape(dt("sortBy"))}: ${escape(dt("custom"))}</span></div><span class="ff-toolbar-spacer"></span><div class="ff-toolbar-control ff-share-control" role="button" tabindex="0" title="${escape(dt("share"))}" data-testid="menu-bar-share-button" data-direct-action="invite"><span class="ff-toolbar-icon">${icon("share")}</span><span class="ff-toolbar-label">${escape(dt("share"))}</span></div><div class="ff-toolbar-upload" role="button" tabindex="0" title="${escape(dt("exportSequence"))}" data-testid="export-cta" data-direct-action="export"><span class="ff-toolbar-icon">${icon("upload")}</span><span class="ff-toolbar-label">${escape(dt("exportSequence"))}</span></div><div class="ff-toolbar-add" role="button" tabindex="0" title="${escape(dt("exportSequence"))}" data-direct-action="export">+</div></div>`;
   const breadcrumb = selectedProject
-    ? `<span class="ff-breadcrumb-link" role="button" tabindex="0" data-direct-project="">⌂</span><span>/</span><strong>${escape(project?.name ?? dt("title"))}</strong>`
-    : `<span>⌂</span><span>/</span><strong>${escape(dt("title"))}</strong>`;
+    ? `<span class="ff-breadcrumb-link" role="button" tabindex="0" data-direct-project="">${icon("home")}</span><span>/</span><strong>${escape(project?.name ?? dt("title"))}</strong>`
+    : `<span>${icon("home")}</span><span>/</span><strong>${escape(dt("title"))}</strong>`;
+  const projectContext = selectedProject && project ? `<div class="ff-project-context" data-testid="project-header"><span class="ff-project-context-mark">${icon("project")}</span><div><strong>${escape(project.name)}</strong><small>${escape(`${project.asset_count} ${dt("assets")}${project.role ? ` · ${project.role}` : ""}`)}</small></div></div>` : "";
   const projectsView = projects.length
-    ? `<div class="ff-project-grid">${projects.map(item => `<div class="ff-project-card" role="button" tabindex="0" data-direct-project="${escape(item.id)}"><span class="ff-project-mark">▦</span><strong>${escape(item.name)}</strong><small>${escape(item.description ?? `${item.asset_count} ${dt("assets")}`)}</small></div>`).join("")}</div>`
+    ? `<div class="ff-project-grid">${projects.map(item => `<div class="ff-project-card" role="button" tabindex="0" title="${escape(item.description ?? item.name)}" data-direct-project="${escape(item.id)}"><span class="ff-project-mark">${icon("project")}</span><strong>${escape(item.name)}</strong><small>${escape(`${item.asset_count} ${dt("assets")}${item.role ? ` · ${item.role}` : ""}`)}</small></div>`).join("")}</div>`
     : `<div class="ff-empty-state"><div class="ff-empty-glyph">▦</div><p>${escape(dt("emptyProjects"))}</p></div>`;
-  return `<div class="ff-page ff-browse-page"><div class="ff-breadcrumb">${breadcrumb}</div>${toolbar}${selectedProject ? assetTiles() : projectsView}</div>`;
+  return `<div class="ff-page ff-browse-page"><div class="ff-breadcrumb">${breadcrumb}</div>${projectContext}${toolbar}${selectedProject ? assetTiles() : projectsView}</div>`;
 }
 
 function modal(): string {
@@ -131,10 +151,13 @@ function modal(): string {
   if (dialog === "invite") return `<div class="ff-modal-backdrop"><section class="ff-modal ff-invite-modal"><div class="ff-modal-title"><span class="ff-gradient-dot"></span><h2>${escape(dt("addToProject"))}</h2></div><div class="ff-invite-input"><input placeholder="${escape(dt("nameOrEmail"))}"/><select><option>${escape(dt("fullAccess"))}</option></select></div><p class="hint">${escape(dt("addToProject"))}</p><div class="ff-invite-space"></div><textarea placeholder="${escape(dt("addMessage"))}"></textarea><div class="ff-modal-actions"><button class="secondary" data-direct-action="close-dialog">${escape(dt("cancel"))}</button><button disabled>${escape(dt("add"))}</button></div></section></div>`;
   const existing = activeSequenceAsset;
   const projectId = existing?.project_id ?? exportProject;
-  const canExport = Boolean(activeSequence && exportFile && projectId && !busy);
+  const directReady = Boolean(exportPreset && exportOutput && directExporter.supports());
+  const canExport = Boolean(activeSequence && projectId && (exportFile || directReady) && !busy);
   const fileLabel = exportFile ? `${exportFile.name} (${Math.ceil(exportFile.size / 1024 / 1024)} MB)` : dt("selectAsset");
-  const progress = exportProgress === undefined ? "" : `<p class="hint">${Math.round(exportProgress * 100)}%</p>`;
-  return `<div class="ff-modal-backdrop"><section class="ff-modal"><div class="ff-modal-title"><h2>${escape(dt("exportTitle"))}</h2><button class="ff-modal-close" data-direct-action="close-dialog">×</button></div><div class="ff-form-row"><label for="directExportName">${escape(dt("exportName"))}</label><input id="directExportName" value="${escape(existing?.name ?? activeSequence?.name ?? "")}"/></div><div class="ff-form-row"><label for="directExportProject">${escape(dt("uploadLocation"))}</label><select id="directExportProject"${existing ? " disabled" : ""}><option value="">${escape(dt("selectProject"))}</option>${projects.map(project => option(project.id, project.name, projectId)).join("")}</select></div><div class="ff-form-row"><label>${escape(dt("asset"))}</label><button class="secondary" data-direct-action="select-export-file"${busy ? " disabled" : ""}>${escape(fileLabel)}</button></div><div class="ff-form-row"><label>${escape(dt("range"))}</label><span>${escape(dt("entireSequence"))}</span></div>${existing ? `<p class="hint">${escape(`v${existing.latest_version?.version_number ?? 0} → new version`)}</p>` : ""}${progress}${error ? `<p class="error">${escape(error)}</p>` : ""}<div class="ff-modal-actions"><button class="secondary" data-direct-action="close-dialog"${busy ? " disabled" : ""}>${escape(dt("cancel"))}</button><button data-direct-action="export-confirm"${canExport ? "" : " disabled"}>${escape(dt("exportSequence"))}</button></div></section></div>`;
+  const presetLabel = exportPreset?.name ?? dt("selectPreset");
+  const outputLabel = exportOutput?.name ?? dt("selectOutput");
+  const progress = exportProgress === undefined ? "" : `<div class="ff-upload-status"><span class="ff-upload-status-dot"></span><div><strong>${escape(dt("uploadingVersion"))}</strong><small>${Math.round(exportProgress * 100)}%</small></div></div><div class="ff-upload-progress"><span style="width:${Math.round(exportProgress * 100)}%"></span></div>`;
+  return `<div class="ff-modal-backdrop"><section class="ff-modal"><div class="ff-modal-title"><h2>${escape(dt("exportTitle"))}</h2><button class="ff-modal-close" data-direct-action="close-dialog">×</button></div><div class="ff-form-row"><label for="directExportName">${escape(dt("exportName"))}</label><input id="directExportName" value="${escape(existing?.name ?? activeSequence?.name ?? "")}"/></div><div class="ff-form-row"><label for="directExportProject">${escape(dt("uploadLocation"))}</label><select id="directExportProject"${existing ? " disabled" : ""}><option value="">${escape(dt("selectProject"))}</option>${projects.map(project => option(project.id, project.name, projectId)).join("")}</select></div><div class="ff-form-row"><label>${escape(dt("preset"))}</label><button class="secondary" data-direct-action="select-export-preset"${busy ? " disabled" : ""}>${escape(presetLabel)}</button></div><div class="ff-form-row"><label>${escape(dt("output"))}</label><button class="secondary" data-direct-action="select-export-output"${busy || !exportPreset ? " disabled" : ""}>${escape(outputLabel)}</button></div><div class="ff-form-row"><label>${escape(dt("asset"))}</label><button class="secondary" data-direct-action="select-export-file"${busy ? " disabled" : ""}>${escape(fileLabel)}</button></div><div class="ff-form-row"><label>${escape(dt("range"))}</label><span>${escape(dt("entireSequence"))}</span></div>${existing ? `<p class="hint">${escape(`v${existing.latest_version?.version_number ?? 0} → new version`)}</p>` : ""}${progress}${error ? `<p class="error">${escape(error)}</p>` : ""}<div class="ff-modal-actions"><button class="secondary" data-direct-action="close-dialog"${busy ? " disabled" : ""}>${escape(dt("cancel"))}</button><button data-direct-action="export-confirm"${canExport ? "" : " disabled"}>${escape(dt("exportSequence"))}</button></div></section></div>`;
 }
 
 function review(): string { return currentUser ? sequencePage() : connectionForm(); }
@@ -203,26 +226,25 @@ function cacheAssets(next: DirectAsset[]): void {
   for (const asset of next) assetCache.set(asset.id, asset);
 }
 
-function sameSequenceName(asset: DirectAsset, sequence: SequenceInfo): boolean {
-  return asset.name.trim().localeCompare(sequence.name.trim(), undefined, { sensitivity: "accent" }) === 0;
-}
-
 /**
  * Frame.io's Current Sequence section follows Premiere's active sequence, not
- * the last asset selected in Browse.  FreeFrame will eventually receive this
- * relation from the export endpoint; exact-name discovery only restores links
- * for assets uploaded before that endpoint existed.
+ * the last asset selected in Browse. A binding is created only by an explicit
+ * upload/link action; a matching name is never treated as proof of identity.
  */
 async function refreshActiveSequence(): Promise<void> {
   const request = ++activeSequenceRequest;
   const current = await premiere.context();
   if (request !== activeSequenceRequest) return;
+  const nextContextKey = activeContextKey(current);
   if (current.status !== "ready" || !client || !currentUrl || !currentUser) {
+    activeSequenceContextKey = current.status === "ready" ? "" : nextContextKey;
     activeSequence = undefined;
     activeSequenceAsset = undefined;
     render();
     return;
   }
+  if (nextContextKey === activeSequenceContextKey && activeSequence) return;
+  activeSequenceContextKey = nextContextKey;
 
   const sequence = current.sequence;
   let binding = store.getSequenceBinding(currentUrl, sequence.projectGuid, sequence.id);
@@ -232,19 +254,6 @@ async function refreshActiveSequence(): Promise<void> {
     if (request !== activeSequenceRequest) return;
     cacheAssets(next);
     linked = next.find(asset => asset.id === binding!.assetId);
-  }
-  if (!binding) {
-    for (const project of projects) {
-      const next = await client.assets(project.id);
-      if (request !== activeSequenceRequest) return;
-      cacheAssets(next);
-      const candidate = next.find(asset => sameSequenceName(asset, sequence));
-      if (!candidate) continue;
-      binding = { serverUrl: currentUrl, projectGuid: sequence.projectGuid, sequenceId: sequence.id, projectId: project.id, assetId: candidate.id };
-      store.saveSequenceBinding(binding);
-      linked = candidate;
-      break;
-    }
   }
   if (request !== activeSequenceRequest) return;
   activeSequence = sequence;
@@ -305,7 +314,7 @@ async function logout(): Promise<void> {
   operations.begin();
   clearBrowserLogin();
   if (currentUrl) await store.clearRefreshToken(currentUrl);
-  client?.clearSession(); client = undefined; currentUser = undefined; projects = []; assets = []; assetCache.clear(); versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; activeSequence = undefined; activeSequenceAsset = undefined; activeSequenceRequest++; error = ""; render();
+  client?.clearSession(); client = undefined; currentUser = undefined; projects = []; assets = []; assetCache.clear(); versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; activeSequence = undefined; activeSequenceAsset = undefined; activeSequenceContextKey = ""; activeSequenceRequest++; error = ""; render();
 }
 
 async function comment(): Promise<void> {
@@ -333,18 +342,51 @@ async function selectExportFile(): Promise<void> {
   render();
 }
 
+async function selectExportPreset(): Promise<void> {
+  if (busy) return;
+  try { exportPreset = await mediaFiles.selectPreset(); exportOutput = undefined; exportFile = undefined; error = ""; }
+  catch (caught) { fail(caught); }
+  render();
+}
+
+async function selectExportOutput(): Promise<void> {
+  if (busy || !exportPreset || !activeSequence) return;
+  try {
+    const sequence = await premiere.hostSequence(activeSequence.projectGuid, activeSequence.id);
+    const extension = await directExporter.outputExtension(sequence, exportPreset.nativePath);
+    const name = root?.querySelector<HTMLInputElement>("#directExportName")?.value.trim() || activeSequence.name || "sequence";
+    exportOutput = await mediaFiles.selectOutput(`${name}.${extension}`, extension);
+    exportFile = undefined;
+    error = "";
+  } catch (caught) { fail(caught); }
+  render();
+}
+
 async function exportCurrentSequence(): Promise<void> {
-  if (!client || !exportFile || busy) return;
+  if (!client || busy) return;
   const context = await premiere.context();
   if (context.status !== "ready") { error = dt("sequenceNotExported"); render(); return; }
   const existing = store.getSequenceBinding(currentUrl, context.sequence.projectGuid, context.sequence.id);
   const projectId = existing?.projectId ?? exportProject;
   const name = root?.querySelector<HTMLInputElement>("#directExportName")?.value.trim() ?? context.sequence.name;
-  if (!projectId || !name) return;
+  if (!projectId || !name || (!exportFile && (!exportPreset || !exportOutput))) return;
   const generation = operations.begin();
   busy = true; error = ""; exportProgress = 0; render();
   try {
-    const result = await client.upload(projectId, name, exportFile, existing?.assetId, progress => {
+    let uploadFile = exportFile;
+    if (!uploadFile && exportPreset && exportOutput) {
+      const sequence = await premiere.hostSequence(context.sequence.projectGuid, context.sequence.id);
+      const prepared = await directExporter.prepare(context.sequence.projectGuid, context.sequence.id, sequence, name, exportPreset, exportOutput);
+      const output = await directExporter.export(prepared, { onProgress: progress => { if (operations.current(generation)) { exportProgress = progress; render(); } } });
+      operations.assertCurrent(generation);
+      uploadFile = await mediaFiles.read(output, "exported");
+      exportProgress = 0;
+      render();
+    }
+    if (!uploadFile) throw new Error("No exported media file is available");
+    const afterExport = await premiere.context();
+    if (afterExport.status !== "ready" || afterExport.sequence.projectGuid !== context.sequence.projectGuid || afterExport.sequence.id !== context.sequence.id) throw new Error("The active Premiere sequence changed during export");
+    const result = await client.upload(projectId, name, uploadFile, existing?.assetId, progress => {
       if (operations.current(generation)) { exportProgress = progress; render(); }
     });
     operations.assertCurrent(generation);
@@ -363,6 +405,8 @@ async function exportCurrentSequence(): Promise<void> {
     comments = [];
     dialog = "";
     exportFile = undefined;
+    exportPreset = undefined;
+    exportOutput = undefined;
     exportProgress = undefined;
   } catch (caught) {
     if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(caught);
@@ -380,13 +424,15 @@ root?.addEventListener("click", event => {
   if (action === "refresh") void (async () => { const generation = operations.begin(); busy = true; error = ""; render(); try { await loadProjects(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })();
   if (action === "comment") void comment();
   if (action === "select-export-file") void selectExportFile();
+  if (action === "select-export-preset") void selectExportPreset();
+  if (action === "select-export-output") void selectExportOutput();
   if (action === "export-confirm") void exportCurrentSequence();
   if (action === "appearance" || action === "export" || action === "invite") {
     dialog = action === "appearance" ? "appearance" : action === "export" ? "export" : "invite";
-    if (action === "export") { exportFile = undefined; exportProgress = undefined; exportProject = activeSequenceAsset?.project_id ?? selectedProject; }
+    if (action === "export") { exportFile = undefined; exportPreset = undefined; exportOutput = undefined; exportProgress = undefined; exportProject = activeSequenceAsset?.project_id ?? selectedProject; }
     render();
   }
-  if (action === "close-dialog") { dialog = ""; exportFile = undefined; exportProgress = undefined; render(); }
+  if (action === "close-dialog") { dialog = ""; exportFile = undefined; exportPreset = undefined; exportOutput = undefined; exportProgress = undefined; render(); }
   const projectTarget = (event.target as HTMLElement).closest<HTMLElement>("[data-direct-project]");
   if (projectTarget) {
     const projectId = projectTarget.dataset.directProject ?? "";
@@ -419,9 +465,13 @@ window.addEventListener(INTERFACE_LOCALE_EVENT, render);
 window.addEventListener(USER_CONFIG_EVENT, event => {
   if ((event as CustomEvent<unknown>).detail !== "freeframe") return;
   clearBrowserLogin(); client?.clearSession(); client = undefined; currentUser = undefined; currentUrl = store.getUrl();
-  projects = []; assets = []; assetCache.clear(); versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; activeSequence = undefined; activeSequenceAsset = undefined; activeSequenceRequest++;
+  projects = []; assets = []; assetCache.clear(); versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; activeSequence = undefined; activeSequenceAsset = undefined; activeSequenceContextKey = ""; activeSequenceRequest++;
   void restore();
 });
 
 render();
 void restore();
+activeSequenceTimer = window.setInterval(() => {
+  if (mode === "freeframe" && currentUser && !busy) void refreshActiveSequence();
+}, 3000);
+window.addEventListener("unload", () => { if (activeSequenceTimer !== undefined) window.clearInterval(activeSequenceTimer); });

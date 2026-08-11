@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { mediaMimeType, UxpMediaFiles } from "../src/uxp-media";
 
-function uxpRuntime(entry: any) {
-  return () => ({ storage: { localFileSystem: { getFileForOpening: async () => entry } } });
+function uxpRuntime(entry: any, savedEntry: any = entry) {
+  return () => ({ storage: { localFileSystem: { getFileForOpening: async () => entry, getFileForSaving: async () => savedEntry } } });
 }
 function fsRuntime(bytes: Uint8Array, maxRead = Number.POSITIVE_INFINITY) {
   const open = vi.fn(async () => 7);
@@ -42,6 +42,14 @@ describe("UXP media file boundary", () => {
 
   it("returns undefined when the picker is cancelled", async () => {
     await expect(new UxpMediaFiles(uxpRuntime(null), fsRuntime(new Uint8Array()).runtime).selectExported()).resolves.toBeUndefined();
+  });
+
+  it("selects a Premiere preset and a validated output destination", async () => {
+    const preset = { isFile: true, name: "H264.epr", nativePath: "/private/H264.epr" };
+    const output = { isFile: true, name: "cut.mp4", nativePath: "/private/cut.mp4" };
+    const media = new UxpMediaFiles(uxpRuntime(preset, output), fsRuntime(new Uint8Array()).runtime);
+    await expect(media.selectPreset()).resolves.toBe(preset);
+    await expect(media.selectOutput("cut.mp4", ".mp4")).resolves.toBe(output);
   });
 
   it("rejects unsupported extensions, invalid metadata, and truncated ranges", async () => {

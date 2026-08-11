@@ -2,7 +2,7 @@ import type { UploadFile } from "./multipart-uploader";
 
 declare const require: (name: string) => any;
 
-interface UxpFileEntry {
+export interface UxpFileEntry {
   isFile?: boolean;
   name: string;
   nativePath: string;
@@ -91,6 +91,24 @@ export class UxpMediaFiles {
     const entry = await this.storage().getFileForOpening({ allowMultiple: false, types: ["mp4", "mov", "avi", "mkv", "webm", "mpeg", "mpg", "wmv"] }) as UxpFileEntry | null;
     if (!entry) return undefined;
     return this.read(entry, "selected", signal);
+  }
+
+  async selectPreset(signal?: AbortSignal): Promise<UxpFileEntry | undefined> {
+    if (signal?.aborted) throw abortError();
+    const entry = await this.storage().getFileForOpening({ allowMultiple: false, types: ["epr"] }) as UxpFileEntry | null;
+    if (!entry) return undefined;
+    if (!entry.isFile || !entry.nativePath || !entry.name.toLowerCase().endsWith(".epr")) throw new Error("UXP did not return a valid Premiere preset");
+    return entry;
+  }
+
+  async selectOutput(suggestedName: string, extension: string, signal?: AbortSignal): Promise<UxpFileEntry | undefined> {
+    if (signal?.aborted) throw abortError();
+    const normalized = extension.replace(/^\./, "").toLowerCase();
+    if (!normalized || !/^[a-z0-9]+$/.test(normalized)) throw new Error("Premiere returned an invalid export extension");
+    const entry = await this.storage().getFileForSaving(suggestedName, { types: [normalized] }) as UxpFileEntry | null;
+    if (!entry) return undefined;
+    if (!entry.isFile || !entry.nativePath) throw new Error("UXP did not return a valid export path");
+    return entry;
   }
 
   async read(entry: UxpFileEntry, source: "selected" | "exported", signal?: AbortSignal): Promise<SelectedMediaFile> {

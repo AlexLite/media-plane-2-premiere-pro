@@ -359,7 +359,11 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-current-linked small { color: #8f8f94; margin-top: 3px; }
 .ff-all-assets-title { margin-top: 28px; }
 .ff-empty-state { align-items: center; color: #8e8e93; display: flex; flex-direction: column; justify-content: center; min-height: 230px; text-align: center; }
+.ff-empty-dropzone { border: 1px dashed #343742; border-radius: 18px; margin: 8px 0 4px; min-height: 260px; padding: 24px 16px; }
+.ff-empty-dropzone .ff-empty-glyph { background: transparent; color: #424550; font-size: 42px; height: 76px; width: 76px; }
+.ff-empty-dropzone p { color: #9799a3; font-size: 12px; }
 .ff-empty-state p { color: #9a9a9e; margin: 9px 0 0; }
+.ff-empty-action { background: #604cf5 !important; border-color: #7563ff !important; color: #fff !important; margin-top: 16px !important; }
 .ff-empty-glyph { align-items: center; background: #2b2c32; border-radius: 8px; color: #4c4d57; display: inline-flex; font-size: 31px; height: 58px; justify-content: center; width: 58px; }
 .ff-current-card .ff-empty-glyph { background: transparent; color: #41424a; font-size: 46px; height: auto; margin-bottom: 10px; width: auto; }
 .ff-asset-list { display: flex; flex-wrap: wrap; gap: 9px; }
@@ -368,6 +372,13 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-asset-thumb { align-items: center; background: linear-gradient(140deg, #363942, #22232a); color: #a5a8b1; display: flex; font-size: 18px; height: 70px; justify-content: center; }
 .ff-asset-name { overflow: hidden; padding: 8px 8px 1px; text-overflow: ellipsis; white-space: nowrap; }
 .ff-asset-meta { color: #919198; font-size: 10px; padding: 0 8px 8px; }
+.ff-upload-status { align-items: center; background: #202023; border: 1px solid #303039; border-radius: 6px; display: flex; gap: 8px; margin: 14px 0 7px; padding: 8px 9px; }
+.ff-upload-status-dot { background: #7563ff; border-radius: 50%; box-shadow: 0 0 0 3px rgba(117,99,255,.16); height: 7px; width: 7px; }
+.ff-upload-status strong, .ff-upload-status small { display: block; }
+.ff-upload-status strong { color: #e8e8ed; font-size: 11px; }
+.ff-upload-status small { color: #9a9aa3; font-size: 10px; margin-top: 2px; }
+.ff-upload-progress { background: #303039; border-radius: 999px; height: 3px; margin: 0 0 8px; overflow: hidden; }
+.ff-upload-progress span { background: #6757f7; display: block; height: 100%; transition: width .15s ease-out; }
 .ff-sequence-item { align-items: center; background: #202022 !important; border: 1px solid #303035 !important; border-radius: 7px !important; color: #e7e7e9 !important; display: flex; flex: 1 1 170px; height: 56px !important; margin: 0; min-height: 56px !important; padding: 5px 8px !important; text-align: left; }
 .ff-sequence-item.selected { border-color: #6757f7 !important; }
 .ff-sequence-item .ff-asset-thumb { border-radius: 4px; font-size: 11px; height: 42px; margin-right: 8px; width: 60px; }
@@ -375,9 +386,19 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-sequence-item small { color: #8d8d94; margin-top: 3px; }
 .ff-breadcrumb { align-items: center; border-bottom: 1px solid #29292c; color: #98989c; display: flex; gap: 9px; margin: -14px -7px 12px; padding: 11px 12px; }
 .ff-breadcrumb strong { color: #dedee0; font-size: 12px; }
+.ff-icon { fill: none; height: 16px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; vertical-align: middle; width: 16px; }
+.ff-project-context { align-items: center; background: #1b1b1e; border: 1px solid #2b2b30; border-radius: 7px; display: flex; gap: 9px; margin: 0 0 10px; min-height: 48px; padding: 7px 10px; }
+.ff-project-context:hover { background: #222226; border-color: #3a3a43; }
+.ff-project-context-mark { align-items: center; background: #33333b; border-radius: 6px; color: #b8b8c3; display: flex; height: 30px; justify-content: center; width: 30px; }
+.ff-project-context strong, .ff-project-context small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ff-project-context strong { color: #eeeeF1; font-size: 12px; }
+.ff-project-context small { color: #898991; font-size: 10px; margin-top: 2px; }
 .ff-browse-toolbar { align-items: center; border-bottom: 1px solid #29292c; display: flex; gap: 4px; margin: 0 -7px 18px; min-height: 34px; padding: 0 8px 12px; }
 .ff-toolbar-control { border: 1px solid transparent; border-radius: 5px; box-sizing: border-box; color: #b9b9be; cursor: pointer; font-size: 11px; font-weight: 600; line-height: 27px; padding: 0 8px; white-space: nowrap; }
 .ff-toolbar-control:hover { background: #2b2b2f; border-color: #38383d; color: #f0f0f2; }
+.ff-toolbar-icon { color: #c6c6cc; display: inline-block; font-size: 13px; line-height: 1; margin-right: 5px; vertical-align: -1px; }
+.ff-toolbar-upload { align-items: center; background: #604cf5; border: 1px solid #7563ff; border-radius: 5px; box-sizing: border-box; color: #fff; cursor: pointer; display: flex; font-size: 11px; font-weight: 600; gap: 5px; line-height: 27px; padding: 0 9px; white-space: nowrap; }
+.ff-toolbar-upload:hover { background: #6e5cff; }
 .ff-share-control { background: #2a2a2d; border-color: #38383d; color: #d7d7db; }
 .ff-toolbar-spacer { flex: 1; }
 .ff-toolbar-add { align-items: center; background: #604cf5; border-radius: 6px; color: #fff; cursor: pointer; display: flex; font-size: 19px; height: 28px; justify-content: center; line-height: 1; margin-left: 2px; width: 28px; }
@@ -388,7 +409,23 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-project-card strong { color: #e7e7ea; font-size: 12px; margin-top: 13px; }
 .ff-project-card small { color: #929299; font-size: 10px; margin-top: 4px; }
 .ff-project-mark { align-items: center; background: #2d2d33; border-radius: 5px; color: #9294a0; display: flex; font-size: 17px; height: 32px; justify-content: center; width: 36px; }
+.ff-project-mark .ff-icon { height: 17px; width: 17px; }
 .ff-breadcrumb-link { color: #c9c9cf; cursor: pointer; }
+@media (max-width: 700px) {
+  .ff-browse-toolbar { gap: 2px; margin-left: -4px; margin-right: -4px; padding-left: 4px; padding-right: 4px; }
+  .ff-toolbar-control { align-items: center; display: inline-flex; height: 29px; justify-content: center; padding: 0; width: 30px; }
+  .ff-toolbar-icon { font-size: 15px; margin: 0; }
+  .ff-toolbar-label { display: none; }
+  .ff-toolbar-upload { font-size: 0; height: 29px; justify-content: center; padding: 0; width: 30px; }
+  .ff-toolbar-upload .ff-toolbar-icon { font-size: 16px; margin: 0; }
+  .ff-share-control { background: transparent; border-color: transparent; }
+  .ff-toolbar-add { height: 29px; width: 29px; }
+  .ff-project-card { flex-basis: 130px; min-height: 92px; padding: 10px; }
+  .ff-project-card strong { margin-top: 8px; }
+  .ff-project-card small { display: none; }
+  .ff-project-mark { font-size: 15px; height: 27px; width: 30px; }
+  .ff-breadcrumb { margin-left: -4px; margin-right: -4px; }
+}
 .ff-modal-backdrop { align-items: center; background: rgba(0, 0, 0, .72); bottom: 0; display: flex; justify-content: center; left: 0; padding: 16px; position: fixed; right: 0; top: 0; z-index: 50; }
 .ff-modal, .ff-popover { background: #1c1c1e; border: 1px solid #2c2c30; border-radius: 8px; box-shadow: 0 14px 50px rgba(0, 0, 0, .55); box-sizing: border-box; max-width: 620px; padding: 18px; width: 100%; }
 .ff-modal-title { align-items: center; border-bottom: 1px solid #303034; display: flex; justify-content: space-between; margin: -18px -18px 16px; padding: 16px 18px; }
