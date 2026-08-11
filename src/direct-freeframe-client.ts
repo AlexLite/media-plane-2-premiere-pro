@@ -94,6 +94,9 @@ export class DirectFreeFrameClient {
   private async publicPost(path: string, body: unknown): Promise<unknown> {
     return this.parse(await fetchWithTimeout(`${this.root}${path}`, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) }));
   }
+  private async devicePost(path: string, body: unknown): Promise<unknown> {
+    return this.parse(await fetchWithTimeout(`${this.root}${path}`, { method: "POST", credentials: "omit", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+  }
   private async renewSession(): Promise<void> {
     if (!this.sessionHooks) throw new FreeFrameError("FreeFrame session expired", 401);
     if (!this.refreshInFlight) {
@@ -122,10 +125,10 @@ export class DirectFreeFrameClient {
     return result;
   }
   /** Browser/device authorization contract: POST /auth/device/start then poll /auth/device/poll. */
-  async startDeviceAuthorization(): Promise<DeviceAuthorization> { return deviceAuthorization(await this.publicPost("/auth/device/start", { client_id: "premiere-uxp" })); }
+  async startDeviceAuthorization(): Promise<DeviceAuthorization> { return deviceAuthorization(await this.devicePost("/auth/device/start", { client_id: "premiere-uxp" })); }
   async pollDeviceAuthorization(deviceCode: string): Promise<DirectTokens | undefined> {
     if (!deviceCode) throw new FreeFrameError("Device code is missing", 400);
-    const response = await fetchWithTimeout(`${this.root}/auth/device/poll`, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ device_code: deviceCode, client_id: "premiere-uxp" }) });
+    const response = await fetchWithTimeout(`${this.root}/auth/device/poll`, { method: "POST", credentials: "omit", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ device_code: deviceCode, client_id: "premiere-uxp" }) });
     const raw = await response.text();
     let body: unknown;
     if (raw) try { body = JSON.parse(raw); } catch { throw new FreeFrameError("FreeFrame returned invalid JSON", 502); }

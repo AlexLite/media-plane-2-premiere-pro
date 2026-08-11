@@ -68,8 +68,11 @@ describe("direct FreeFrame mode", () => {
     vi.stubGlobal("fetch", fetchMock);
     const client = new DirectFreeFrameClient("https://freeframe.test");
     await expect(client.startDeviceAuthorization()).resolves.toMatchObject({ user_code: "ABCD-EFGH", verification_uri_complete: "https://freeframe.test/device?code=ABCD-EFGH" });
+    expect((fetchMock.mock.calls[0][1] as RequestInit).credentials).toBe("omit");
     await expect(client.pollDeviceAuthorization("device-secret")).resolves.toBeUndefined();
+    expect((fetchMock.mock.calls[1][1] as RequestInit).credentials).toBe("omit");
     await expect(client.pollDeviceAuthorization("device-secret")).resolves.toMatchObject({ refresh_token: "refresh-browser" });
+    expect((fetchMock.mock.calls[2][1] as RequestInit).credentials).toBe("omit");
   });
 
   it("expires the local session when the refreshed token is also rejected", async () => {
