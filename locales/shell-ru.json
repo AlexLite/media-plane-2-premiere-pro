@@ -1,4 +1,9 @@
 {
+  "freeframeTitle": "FreeFrame",
+  "freeframeSequences": "Секвенции",
+  "freeframeBrowse": "Обзор",
+  "freeframeMenu": "Меню",
+  "freeframeAccount": "Настройки аккаунта",
   "shellTitle": "Plane × FreeFrame Review",
   "shellSubtitle": "Ревью медиа по версиям для активной секвенции Premiere.",
   "modePlane": "Plane",

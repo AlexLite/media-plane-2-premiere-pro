@@ -1,4 +1,9 @@
 {
+  "freeframeTitle": "FreeFrame",
+  "freeframeSequences": "Sequences",
+  "freeframeBrowse": "Browse",
+  "freeframeMenu": "Menu",
+  "freeframeAccount": "Account settings",
   "shellTitle": "Plane × FreeFrame Review",
   "shellSubtitle": "Version-first media review for the active Premiere sequence.",
   "modePlane": "Plane",

@@ -31,6 +31,11 @@ function tabMarkup(view: ShellView): string {
   return view === "settings" ? `<div ${attributes} tabindex="-1">${tabContent(view)}</div>` : `<button ${attributes}>${tabContent(view)}</button>`;
 }
 
+function freeFrameHeader(): string {
+  const locale = interfaceLocale();
+  return `<header class="ff-shell-header"><div class="ff-appbar"><div class="ff-app-title"><strong>${escape(st("freeframeTitle"))}</strong><span aria-hidden="true">☰</span></div><div class="ff-app-actions"><label class="ff-locale-control" for="interfaceLocale"><span>${escape(st("languageLabel"))}</span><select id="interfaceLocale"><option value="ru"${locale === "ru" ? " selected" : ""}>${escape(st("languageRussian"))}</option><option value="en"${locale === "en" ? " selected" : ""}>${escape(st("languageEnglish"))}</option></select></label><button class="ff-account" data-shell-tab="settings" aria-label="${escape(st("freeframeAccount"))}" title="${escape(st("freeframeAccount"))}"><img class="shell-user-icon" src="assets/user.png" alt=""></button></div></div><nav class="ff-primary-tabs" role="tablist"><button class="ff-primary-tab" data-shell-tab="review">⌘ ${escape(st("freeframeSequences"))}</button><button class="ff-primary-tab" data-shell-tab="media">▦ ${escape(st("freeframeBrowse"))}</button></nav></header>`;
+}
+
 function apply(view: ShellView): void {
   active = normalizeShellView(view);
   window.localStorage.setItem(VIEW_STORAGE_KEY, active);
@@ -50,6 +55,7 @@ function applyMode(value: ShellMode): void {
   mode = normalizeShellMode(value);
   window.localStorage.setItem(MODE_STORAGE_KEY, mode);
   document.body.dataset.activeMode = mode;
+  render();
   for (const node of Array.from(document.querySelectorAll<HTMLElement>("[data-shell-mode-content]"))) node.hidden = active === "settings" || node.dataset.shellModeContent !== mode;
   for (const tab of Array.from(root?.querySelectorAll<HTMLButtonElement>("[data-shell-mode-tab]") ?? [])) {
     const selected = tab.dataset.shellModeTab === mode;
@@ -62,9 +68,14 @@ function applyMode(value: ShellMode): void {
 
 function render(): void {
   if (!root) return;
+  if (mode === "freeframe") {
+    root.innerHTML = freeFrameHeader();
+    apply(active);
+    return;
+  }
   const locale = interfaceLocale();
   root.innerHTML = `<header class="app-shell-header"><div class="app-shell-top"><div class="app-shell-brand"><h1>${escape(st("shellTitle"))}</h1><p>${escape(st("shellSubtitle"))}</p></div><div class="shell-utilities"><button class="secondary context-refresh" data-context-refresh>${escape(st("refreshSequence"))}</button><label class="locale-control" for="interfaceLocale"><span>${escape(st("languageLabel"))}</span><select id="interfaceLocale"><option value="ru"${locale === "ru" ? " selected" : ""}>${escape(st("languageRussian"))}</option><option value="en"${locale === "en" ? " selected" : ""}>${escape(st("languageEnglish"))}</option></select></label></div></div><div class="mode-tabs" role="tablist"><button class="mode-tab" data-shell-mode-tab="plane">${escape(st("modePlane"))}</button><button class="mode-tab" data-shell-mode-tab="freeframe">${escape(st("modeFreeFrame"))}</button></div><nav class="shell-tabs" role="tablist">${views.map(tabMarkup).join("")}</nav></header>`;
-  applyMode(mode);
+  apply(active);
 }
 
 async function scanActiveContext(force = false): Promise<void> {

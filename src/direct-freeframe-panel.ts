@@ -27,6 +27,7 @@ let selectedAsset = "";
 let selectedVersion = "";
 let busy = false;
 let error = "";
+let dialog: "" | "appearance" | "export" | "invite" = "";
 
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
 const option = (value: string, label: string, selected: string) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(label)}</option>`;
@@ -65,7 +66,7 @@ function legacyReview(): string {
   return `${selectors()}<section class="direct-card"><h2>${escape(dt("reviewTitle"))}</h2>${selectedVersion ? `<div class="comment-composer"><label for="directComment">${escape(dt("comment"))}</label><textarea id="directComment" placeholder="${escape(dt("commentPlaceholder"))}"></textarea><button data-direct-action="comment"${busy ? " disabled" : ""}>${escape(dt("addComment"))}</button></div><div class="comment-list">${list}</div>` : `<p>${escape(dt("selectVersion"))}</p>`}</section>`;
 }
 
-function review(): string {
+function previousReview(): string {
   if (!currentUser) return connectionForm();
   const version = versions.find(item => item.id === selectedVersion);
   const list = comments.length
@@ -78,7 +79,38 @@ function review(): string {
   return `${selectors()}<section class="direct-review-surface"><div class="direct-review-heading"><div><h2>${escape(dt("reviewTitle"))}</h2><p>${escape(detail)}</p></div><span class="direct-live-dot" aria-hidden="true"></span></div>${body}</section>`;
 }
 
-function media(): string { return currentUser ? selectors() : connectionForm(); }
+function previousMedia(): string { return currentUser ? selectors() : connectionForm(); }
+
+function assetTiles(): string {
+  if (!selectedProject) return `<div class="ff-empty-state"><div class="ff-empty-glyph">▦</div><p>${escape(dt("selectProjectToBrowse"))}</p></div>`;
+  if (!assets.length) return `<div class="ff-empty-state"><div class="ff-empty-glyph">▦</div><p>${escape(dt("emptyAssets"))}</p></div>`;
+  return `<div class="ff-asset-list">${assets.map(asset => `<button class="ff-asset-tile${asset.id === selectedAsset ? " selected" : ""}" data-direct-asset="${escape(asset.id)}"><span class="ff-asset-thumb">▶</span><span class="ff-asset-name">${escape(asset.name)}</span><span class="ff-asset-meta">${escape(asset.latest_version ? `v${asset.latest_version.version_number}` : dt("missing"))}</span></button>`).join("")}</div>`;
+}
+
+function sequencePage(): string {
+  const currentAsset = assets.find(asset => asset.id === selectedAsset);
+  const current = currentAsset
+    ? `<button class="ff-current-card ff-current-linked" data-direct-asset="${escape(currentAsset.id)}"><span class="ff-asset-thumb">▶</span><span><strong>${escape(currentAsset.name)}</strong><small>${escape(currentAsset.latest_version ? `v${currentAsset.latest_version.version_number}` : dt("missing"))}</small></span></button>`
+    : `<div class="ff-current-card"><span class="ff-empty-glyph">⇧</span><p>${escape(dt("sequenceNotExported"))}</p></div>`;
+  const list = assets.length ? `<div class="ff-asset-list ff-sequence-list">${assets.map(asset => `<button class="ff-sequence-item${asset.id === selectedAsset ? " selected" : ""}" data-direct-asset="${escape(asset.id)}"><span class="ff-asset-thumb">▶</span><span><strong>${escape(asset.name)}</strong><small>${escape(asset.latest_version ? `v${asset.latest_version.version_number}` : dt("missing"))}</small></span></button>`).join("")}</div>` : `<div class="ff-empty-state"><div class="ff-empty-glyph">▦</div><p>${escape(dt("noLinkedSequenceAssets"))}</p></div>`;
+  return `<div class="ff-page ff-sequences-page"><div class="ff-section-toolbar"><h2>${escape(dt("currentSequenceAsset"))}</h2><div><button class="secondary compact" data-direct-action="invite">${escape(dt("share"))}</button><button class="ff-plus" data-direct-action="export">+</button></div></div>${current}<div class="ff-section-toolbar ff-all-assets-title"><h2>${escape(dt("allSequenceAssets"))}</h2></div>${list}</div>`;
+}
+
+function browsePage(): string {
+  const project = projects.find(item => item.id === selectedProject);
+  const toolbar = `<div class="ff-browse-toolbar"><button class="ff-toolbar-button" data-direct-action="appearance">▦ ${escape(dt("appearance"))}</button><button class="ff-toolbar-button">☷ ${escape(dt("fields"))}</button><button class="ff-toolbar-button">≡ ${escape(dt("sortBy"))}: ${escape(dt("custom"))}</button><button class="secondary compact" data-direct-action="invite">${escape(dt("share"))}</button><button class="ff-plus" data-direct-action="export">+</button></div>`;
+  return `<div class="ff-page ff-browse-page"><div class="ff-breadcrumb"><span>⌂</span><span>/</span><strong>${escape(project?.name ?? dt("title"))}</strong></div>${toolbar}<div class="ff-browse-selectors"><label for="directProject">${escape(dt("project"))}</label><select id="directProject"><option value="">${escape(dt("selectProject"))}</option>${projects.map(item => option(item.id, item.name, selectedProject)).join("")}</select>${selectedProject ? `<label for="directVersion">${escape(dt("version"))}</label><select id="directVersion"${selectedAsset ? "" : " disabled"}><option value="">${escape(dt("selectVersion"))}</option>${versions.map(item => option(item.id, `v${item.version_number} · ${item.processing_status}`, selectedVersion)).join("")}</select>` : ""}</div>${assetTiles()}</div>`;
+}
+
+function modal(): string {
+  if (!dialog) return "";
+  if (dialog === "appearance") return `<div class="ff-modal-backdrop"><section class="ff-popover"><div class="ff-popover-row"><strong>${escape(dt("layout"))}</strong><div class="ff-segmented"><button class="active">▦</button><button>☷</button></div></div><div class="ff-popover-row"><strong>${escape(dt("cardSize"))}</strong><div class="ff-segmented"><button>S</button><button class="active">M</button><button>L</button></div></div><div class="ff-popover-row"><strong>${escape(dt("thumbnailScale"))}</strong><button class="secondary compact">Fit⌄</button></div><div class="ff-popover-row"><strong>${escape(dt("showCardInfo"))}</strong><span class="ff-toggle active"></span></div><div class="ff-popover-row"><strong>${escape(dt("titles"))}</strong><button class="secondary compact">1 Line⌄</button></div><button class="ff-modal-close" data-direct-action="close-dialog">×</button></section></div>`;
+  if (dialog === "invite") return `<div class="ff-modal-backdrop"><section class="ff-modal ff-invite-modal"><div class="ff-modal-title"><span class="ff-gradient-dot"></span><h2>${escape(dt("addToProject"))}</h2></div><div class="ff-invite-input"><input placeholder="${escape(dt("nameOrEmail"))}"/><select><option>${escape(dt("fullAccess"))}</option></select></div><p class="hint">${escape(dt("addToProject"))}</p><div class="ff-invite-space"></div><textarea placeholder="${escape(dt("addMessage"))}"></textarea><div class="ff-modal-actions"><button class="secondary" data-direct-action="close-dialog">${escape(dt("cancel"))}</button><button disabled>${escape(dt("add"))}</button></div></section></div>`;
+  return `<div class="ff-modal-backdrop"><section class="ff-modal"><div class="ff-modal-title"><h2>${escape(dt("exportTitle"))}</h2><button class="ff-modal-close" data-direct-action="close-dialog">×</button></div><div class="ff-form-row"><label>${escape(dt("exportName"))}</label><input value="${escape(assets.find(item => item.id === selectedAsset)?.name ?? "")}"/></div><div class="ff-form-row"><label>${escape(dt("uploadLocation"))}</label><select><option>${escape(dt("selectProject"))}</option></select></div><div class="ff-form-row"><label>${escape(dt("range"))}</label><select><option>${escape(dt("entireSequence"))}</option></select></div><div class="ff-form-row"><label>${escape(dt("preset"))}</label><select><option>Match Source</option></select></div><div class="ff-form-row"><label>${escape(dt("markersAsComments"))}</label><span class="ff-toggle"></span></div><div class="ff-form-row"><label>${escape(dt("saveLocalCopy"))}</label><span class="ff-toggle"></span></div><p class="hint">${escape(dt("exportUnavailable"))}</p><div class="ff-modal-actions"><button class="secondary" data-direct-action="close-dialog">${escape(dt("cancel"))}</button><button disabled>${escape(dt("exportSequence"))}</button></div></section></div>`;
+}
+
+function review(): string { return currentUser ? sequencePage() : connectionForm(); }
+function media(): string { return currentUser ? browsePage() : connectionForm(); }
 
 function diagnostics(): string {
   const row = (label: string, ready: boolean) => `<div class="direct-status-row"><span class="diagnostic-dot ${ready ? "pass" : "skip"}"></span><strong>${escape(label)}</strong><span>${escape(ready ? dt("ready") : dt("missing"))}</span></div>`;
@@ -87,7 +119,7 @@ function diagnostics(): string {
 
 function render(): void {
   if (!root) return;
-  root.innerHTML = `<div class="direct-freeframe-surface">${view === "review" ? review() : view === "media" ? media() : diagnostics()}</div>`;
+  root.innerHTML = `<div class="direct-freeframe-surface">${view === "review" ? review() : view === "media" ? media() : diagnostics()}${modal()}</div>`;
 }
 
 function fail(): void { error = dt("requestFailed"); }
@@ -170,6 +202,13 @@ root?.addEventListener("click", event => {
   if (action === "logout") void logout();
   if (action === "refresh") void (async () => { const generation = operations.begin(); busy = true; error = ""; render(); try { await loadProjects(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })();
   if (action === "comment") void comment();
+  if (action === "appearance" || action === "export" || action === "invite") { dialog = action === "appearance" ? "appearance" : action === "export" ? "export" : "invite"; render(); }
+  if (action === "close-dialog") { dialog = ""; render(); }
+  const assetId = (event.target as HTMLElement).closest<HTMLElement>("[data-direct-asset]")?.dataset.directAsset;
+  if (assetId && assetId !== selectedAsset) {
+    const generation = operations.begin(); selectedAsset = assetId; selectedVersion = "";
+    void (async () => { busy = true; render(); try { await loadVersions(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })();
+  }
   const commentId = (event.target as HTMLElement).closest<HTMLElement>("[data-direct-resolve]")?.dataset.directResolve;
   if (commentId && client) void (async () => { const generation = operations.begin(); try { await client!.toggleResolved(selectedAsset, selectedVersion, commentId); operations.assertCurrent(generation); await loadComments(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } if (operations.current(generation)) render(); })();
 });
