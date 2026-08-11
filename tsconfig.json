@@ -1,4 +1,4 @@
 {
-  "compilerOptions": { "target": "ES2020", "module": "ESNext", "moduleResolution": "bundler", "strict": true, "lib": ["ES2020", "DOM"], "skipLibCheck": true },
+  "compilerOptions": { "target": "ES2020", "module": "ESNext", "moduleResolution": "bundler", "strict": true, "lib": ["ES2020", "DOM"], "resolveJsonModule": true, "skipLibCheck": true },
   "include": ["src", "tests"]
 }

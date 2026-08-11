@@ -1,3 +1,13 @@
 node_modules/
 .DS_Store
 coverage/
+dist/
+*.ccx
+*.pem
+*.key
+*.p12
+*.mp4
+*.mov
+*.mxf
+.uxp-devtools/
+*.uxpplugin
