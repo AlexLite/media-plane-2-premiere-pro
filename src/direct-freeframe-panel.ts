@@ -1,4 +1,5 @@
-import type { ReviewComment } from "./domain";
+import type { ReviewComment, SequenceInfo } from "./domain";
+import { ACTIVE_CONTEXT_EVENT } from "./active-context";
 import { DirectFreeFrameClient, directApiUrl, directReviewVersion, type DirectAsset, type DirectProject, type DirectUser, type DirectVersion } from "./direct-freeframe-client";
 import { dt } from "./direct-locale";
 import { FreeFrameError, normalizeFreeFrameApiUrl } from "./freeframe-client";
@@ -27,6 +28,10 @@ let comments: ReviewComment[] = [];
 let selectedProject = "";
 let selectedAsset = "";
 let selectedVersion = "";
+let activeSequence: SequenceInfo | undefined;
+let activeSequenceAsset: DirectAsset | undefined;
+const assetCache = new Map<string, DirectAsset>();
+let activeSequenceRequest = 0;
 let busy = false;
 let error = "";
 let dialog: "" | "appearance" | "export" | "invite" = "";
@@ -96,11 +101,10 @@ function assetTiles(): string {
 }
 
 function sequencePage(): string {
-  const currentAsset = assets.find(asset => asset.id === selectedAsset);
-  const current = currentAsset
-    ? `<button class="ff-current-card ff-current-linked" data-direct-asset="${escape(currentAsset.id)}"><span class="ff-asset-thumb">▶</span><span><strong>${escape(currentAsset.name)}</strong><small>${escape(currentAsset.latest_version ? `v${currentAsset.latest_version.version_number}` : dt("missing"))}</small></span></button>`
-    : `<div class="ff-current-card"><span class="ff-empty-glyph">⇧</span><p>${escape(dt("sequenceNotExported"))}</p></div>`;
-  const list = assets.length ? `<div class="ff-asset-list ff-sequence-list">${assets.map(asset => `<button class="ff-sequence-item${asset.id === selectedAsset ? " selected" : ""}" data-direct-asset="${escape(asset.id)}"><span class="ff-asset-thumb">▶</span><span><strong>${escape(asset.name)}</strong><small>${escape(asset.latest_version ? `v${asset.latest_version.version_number}` : dt("missing"))}</small></span></button>`).join("")}</div>` : `<div class="ff-empty-state"><div class="ff-empty-glyph">▦</div><p>${escape(dt("noLinkedSequenceAssets"))}</p></div>`;
+  const current = activeSequenceAsset
+    ? `<button class="ff-current-card ff-current-linked" data-direct-asset="${escape(activeSequenceAsset.id)}"><span class="ff-asset-thumb">▶</span><span><strong>${escape(activeSequenceAsset.name)}</strong><small>${escape(activeSequenceAsset.latest_version ? `v${activeSequenceAsset.latest_version.version_number}` : dt("missing"))}</small></span></button>`
+    : `<div class="ff-current-card"><span class="ff-empty-glyph">⇧</span><p>${escape(activeSequence ? dt("sequenceNotExported") : dt("noLinkedSequenceAssets"))}</p></div>`;
+  const list = assets.length ? `<div class="ff-asset-list ff-sequence-list">${assets.map(asset => `<button class="ff-sequence-item${asset.id === activeSequenceAsset?.id ? " selected" : ""}" data-direct-asset="${escape(asset.id)}"><span class="ff-asset-thumb">▶</span><span><strong>${escape(asset.name)}</strong><small>${escape(asset.latest_version ? `v${asset.latest_version.version_number}` : dt("missing"))}</small></span></button>`).join("")}</div>` : `<div class="ff-empty-state"><div class="ff-empty-glyph">▦</div><p>${escape(dt("noLinkedSequenceAssets"))}</p></div>`;
   return `<div class="ff-page ff-sequences-page"><div class="ff-section-toolbar"><h2>${escape(dt("currentSequenceAsset"))}</h2><div class="ff-section-actions"><div class="ff-toolbar-control ff-share-control" role="button" tabindex="0" data-direct-action="invite">${escape(dt("share"))}</div><div class="ff-toolbar-add" role="button" tabindex="0" data-direct-action="export">+</div></div></div>${current}<div class="ff-section-toolbar ff-all-assets-title"><h2>${escape(dt("allSequenceAssets"))}</h2></div>${list}</div>`;
 }
 
@@ -185,6 +189,59 @@ async function startBrowserLogin(): Promise<void> {
   if (operations.current(generation)) render();
 }
 
+function cacheAssets(next: DirectAsset[]): void {
+  for (const asset of next) assetCache.set(asset.id, asset);
+}
+
+function sameSequenceName(asset: DirectAsset, sequence: SequenceInfo): boolean {
+  return asset.name.trim().localeCompare(sequence.name.trim(), undefined, { sensitivity: "accent" }) === 0;
+}
+
+/**
+ * Frame.io's Current Sequence section follows Premiere's active sequence, not
+ * the last asset selected in Browse.  FreeFrame will eventually receive this
+ * relation from the export endpoint; exact-name discovery only restores links
+ * for assets uploaded before that endpoint existed.
+ */
+async function refreshActiveSequence(): Promise<void> {
+  const request = ++activeSequenceRequest;
+  const current = await premiere.context();
+  if (request !== activeSequenceRequest) return;
+  if (current.status !== "ready" || !client || !currentUrl || !currentUser) {
+    activeSequence = undefined;
+    activeSequenceAsset = undefined;
+    render();
+    return;
+  }
+
+  const sequence = current.sequence;
+  let binding = store.getSequenceBinding(currentUrl, sequence.projectGuid, sequence.id);
+  let linked = binding ? assetCache.get(binding.assetId) : undefined;
+  if (binding && !linked) {
+    const next = await client.assets(binding.projectId);
+    if (request !== activeSequenceRequest) return;
+    cacheAssets(next);
+    linked = next.find(asset => asset.id === binding!.assetId);
+  }
+  if (!binding) {
+    for (const project of projects) {
+      const next = await client.assets(project.id);
+      if (request !== activeSequenceRequest) return;
+      cacheAssets(next);
+      const candidate = next.find(asset => sameSequenceName(asset, sequence));
+      if (!candidate) continue;
+      binding = { serverUrl: currentUrl, projectGuid: sequence.projectGuid, sequenceId: sequence.id, projectId: project.id, assetId: candidate.id };
+      store.saveSequenceBinding(binding);
+      linked = candidate;
+      break;
+    }
+  }
+  if (request !== activeSequenceRequest) return;
+  activeSequence = sequence;
+  activeSequenceAsset = linked;
+  render();
+}
+
 async function loadComments(generation: number): Promise<void> {
   const next = client && selectedAsset && selectedVersion ? await client.comments(selectedAsset, selectedVersion) : [];
   operations.assertCurrent(generation); comments = next;
@@ -197,7 +254,7 @@ async function loadVersions(generation: number): Promise<void> {
 }
 async function loadAssets(generation: number): Promise<void> {
   const next = client && selectedProject ? await client.assets(selectedProject) : [];
-  operations.assertCurrent(generation); assets = next;
+  operations.assertCurrent(generation); assets = next; cacheAssets(next);
   if (!assets.some(item => item.id === selectedAsset)) selectedAsset = "";
   await loadVersions(generation);
 }
@@ -216,6 +273,7 @@ async function establish(nextClient: DirectFreeFrameClient, refreshToken: string
   const user = await nextClient.me();
   operations.assertCurrent(generation); currentUser = user;
   await loadProjects(generation);
+  if (operations.current(generation)) void refreshActiveSequence();
 }
 async function restore(): Promise<void> {
   if (currentUser || !currentUrl || mode !== "freeframe") return;
@@ -237,7 +295,7 @@ async function logout(): Promise<void> {
   operations.begin();
   clearBrowserLogin();
   if (currentUrl) await store.clearRefreshToken(currentUrl);
-  client?.clearSession(); client = undefined; currentUser = undefined; projects = []; assets = []; versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; error = ""; render();
+  client?.clearSession(); client = undefined; currentUser = undefined; projects = []; assets = []; assetCache.clear(); versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; activeSequence = undefined; activeSequenceAsset = undefined; activeSequenceRequest++; error = ""; render();
 }
 
 async function comment(): Promise<void> {
@@ -294,11 +352,12 @@ root?.addEventListener("change", event => {
 });
 window.addEventListener(SHELL_MODE_EVENT, event => { mode = normalizeShellMode((event as CustomEvent<unknown>).detail); if (mode === "freeframe") void restore(); });
 window.addEventListener(SHELL_VIEW_EVENT, event => { view = normalizeShellView((event as CustomEvent<unknown>).detail); render(); });
+window.addEventListener(ACTIVE_CONTEXT_EVENT, () => { if (mode === "freeframe" && currentUser) void refreshActiveSequence(); });
 window.addEventListener(INTERFACE_LOCALE_EVENT, render);
 window.addEventListener(USER_CONFIG_EVENT, event => {
   if ((event as CustomEvent<unknown>).detail !== "freeframe") return;
   clearBrowserLogin(); client?.clearSession(); client = undefined; currentUser = undefined; currentUrl = store.getUrl();
-  projects = []; assets = []; versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = "";
+  projects = []; assets = []; assetCache.clear(); versions = []; comments = []; selectedProject = ""; selectedAsset = ""; selectedVersion = ""; activeSequence = undefined; activeSequenceAsset = undefined; activeSequenceRequest++;
   void restore();
 });
 

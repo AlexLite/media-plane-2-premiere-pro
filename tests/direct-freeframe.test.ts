@@ -46,6 +46,18 @@ describe("direct FreeFrame mode", () => {
     await expect(store.getRefreshToken("https://freeframe.test")).resolves.toBeUndefined();
   });
 
+  it("keeps a FreeFrame asset binding separate for each Premiere sequence", () => {
+    const local = new Map<string, string>();
+    const runtime = () => ({
+      localStorage: { get length() { return local.size; }, clear: () => local.clear(), getItem: (key: string) => local.get(key) ?? null, key: (index: number) => [...local.keys()][index] ?? null, removeItem: (key: string) => { local.delete(key); }, setItem: (key: string, value: string) => { local.set(key, value); } } as Storage,
+    });
+    const store = new DirectFreeFrameStore(runtime);
+    store.saveSequenceBinding({ serverUrl: "https://freeframe.test", projectGuid: "premiere-project", sequenceId: "sequence-a", projectId: ids.project, assetId: "33333333-3333-4333-8333-333333333333" });
+    expect(store.getSequenceBinding("https://freeframe.test", "premiere-project", "sequence-a")?.assetId).toBe("33333333-3333-4333-8333-333333333333");
+    expect(store.getSequenceBinding("https://freeframe.test", "premiere-project", "sequence-b")).toBeUndefined();
+    expect(store.getSequenceBinding("https://other-freeframe.test", "premiere-project", "sequence-a")).toBeUndefined();
+  });
+
   it("refreshes once and retries an authorized request after 401", async () => {
     let refreshToken = "refresh-old";
     const fetchMock = vi.fn()

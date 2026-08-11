@@ -4,6 +4,15 @@ const TOKEN_PREFIX = "plane-token:";
 const PLANE_URL_KEY = "plane-user-config-url-v1";
 const DIRECT_URL_KEY = "freeframe-direct-url-v1";
 const DIRECT_REFRESH_PREFIX = "freeframe-refresh:";
+const DIRECT_SEQUENCE_BINDINGS_KEY = "freeframe-direct-sequence-bindings-v1";
+
+export interface DirectSequenceBinding {
+  serverUrl: string;
+  projectGuid: string;
+  sequenceId: string;
+  projectId: string;
+  assetId: string;
+}
 
 interface SecureStorage {
   getItem(key: string): Promise<ArrayBuffer | undefined>;
@@ -61,6 +70,22 @@ export class DirectFreeFrameStore {
   private storage(): Storage { return this.runtime().localStorage ?? window.localStorage; }
   getUrl(): string { return this.storage().getItem(DIRECT_URL_KEY) ?? ""; }
   saveUrl(url: string): void { this.storage().setItem(DIRECT_URL_KEY, url); }
+  getSequenceBinding(serverUrl: string, projectGuid: string, sequenceId: string): DirectSequenceBinding | undefined {
+    return this.sequenceBindings()[`${serverUrl}:${bindingKey(projectGuid, sequenceId)}`];
+  }
+  saveSequenceBinding(binding: DirectSequenceBinding): void {
+    const bindings = this.sequenceBindings();
+    bindings[`${binding.serverUrl}:${bindingKey(binding.projectGuid, binding.sequenceId)}`] = binding;
+    this.storage().setItem(DIRECT_SEQUENCE_BINDINGS_KEY, JSON.stringify(bindings));
+  }
+  clearSequenceBinding(serverUrl: string, projectGuid: string, sequenceId: string): void {
+    const bindings = this.sequenceBindings();
+    delete bindings[`${serverUrl}:${bindingKey(projectGuid, sequenceId)}`];
+    this.storage().setItem(DIRECT_SEQUENCE_BINDINGS_KEY, JSON.stringify(bindings));
+  }
+  private sequenceBindings(): Record<string, DirectSequenceBinding> {
+    try { return JSON.parse(this.storage().getItem(DIRECT_SEQUENCE_BINDINGS_KEY) ?? "{}"); } catch { return {}; }
+  }
   async saveRefreshToken(url: string, token: string): Promise<void> {
     const secure = this.runtime().storage?.secureStorage;
     if (!secure) throw new Error("UXP secure storage is unavailable");

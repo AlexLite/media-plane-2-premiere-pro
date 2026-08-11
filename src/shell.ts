@@ -85,9 +85,10 @@ async function scanActiveContext(force = false): Promise<void> {
   contextScanRunning = true;
   try {
     const next = activeContextKey(await premiere.context());
-    const changed = observedContextKey !== undefined && next !== observedContextKey;
+    const initial = observedContextKey === undefined;
+    const changed = !initial && next !== observedContextKey;
     observedContextKey = next;
-    if (force || changed) window.dispatchEvent(new CustomEvent(ACTIVE_CONTEXT_EVENT, { detail: force ? "manual" : "changed" }));
+    if (force || initial || changed) window.dispatchEvent(new CustomEvent(ACTIVE_CONTEXT_EVENT, { detail: force ? "manual" : initial ? "initial" : "changed" }));
   } catch {
     // A transient host transition is retried by the next scan.
   } finally {
