@@ -101,13 +101,19 @@ function sequencePage(): string {
     ? `<button class="ff-current-card ff-current-linked" data-direct-asset="${escape(currentAsset.id)}"><span class="ff-asset-thumb">▶</span><span><strong>${escape(currentAsset.name)}</strong><small>${escape(currentAsset.latest_version ? `v${currentAsset.latest_version.version_number}` : dt("missing"))}</small></span></button>`
     : `<div class="ff-current-card"><span class="ff-empty-glyph">⇧</span><p>${escape(dt("sequenceNotExported"))}</p></div>`;
   const list = assets.length ? `<div class="ff-asset-list ff-sequence-list">${assets.map(asset => `<button class="ff-sequence-item${asset.id === selectedAsset ? " selected" : ""}" data-direct-asset="${escape(asset.id)}"><span class="ff-asset-thumb">▶</span><span><strong>${escape(asset.name)}</strong><small>${escape(asset.latest_version ? `v${asset.latest_version.version_number}` : dt("missing"))}</small></span></button>`).join("")}</div>` : `<div class="ff-empty-state"><div class="ff-empty-glyph">▦</div><p>${escape(dt("noLinkedSequenceAssets"))}</p></div>`;
-  return `<div class="ff-page ff-sequences-page"><div class="ff-section-toolbar"><h2>${escape(dt("currentSequenceAsset"))}</h2><div><button class="secondary compact" data-direct-action="invite">${escape(dt("share"))}</button><button class="ff-plus" data-direct-action="export">+</button></div></div>${current}<div class="ff-section-toolbar ff-all-assets-title"><h2>${escape(dt("allSequenceAssets"))}</h2></div>${list}</div>`;
+  return `<div class="ff-page ff-sequences-page"><div class="ff-section-toolbar"><h2>${escape(dt("currentSequenceAsset"))}</h2><div class="ff-section-actions"><div class="ff-toolbar-control ff-share-control" role="button" tabindex="0" data-direct-action="invite">${escape(dt("share"))}</div><div class="ff-toolbar-add" role="button" tabindex="0" data-direct-action="export">+</div></div></div>${current}<div class="ff-section-toolbar ff-all-assets-title"><h2>${escape(dt("allSequenceAssets"))}</h2></div>${list}</div>`;
 }
 
 function browsePage(): string {
   const project = projects.find(item => item.id === selectedProject);
-  const toolbar = `<div class="ff-browse-toolbar"><button class="ff-toolbar-button" data-direct-action="appearance">▦ ${escape(dt("appearance"))}</button><button class="ff-toolbar-button">☷ ${escape(dt("fields"))}</button><button class="ff-toolbar-button">≡ ${escape(dt("sortBy"))}: ${escape(dt("custom"))}</button><button class="secondary compact" data-direct-action="invite">${escape(dt("share"))}</button><button class="ff-plus" data-direct-action="export">+</button></div>`;
-  return `<div class="ff-page ff-browse-page"><div class="ff-breadcrumb"><span>⌂</span><span>/</span><strong>${escape(project?.name ?? dt("title"))}</strong></div>${toolbar}<div class="ff-browse-selectors"><label for="directProject">${escape(dt("project"))}</label><select id="directProject"><option value="">${escape(dt("selectProject"))}</option>${projects.map(item => option(item.id, item.name, selectedProject)).join("")}</select>${selectedProject ? `<label for="directVersion">${escape(dt("version"))}</label><select id="directVersion"${selectedAsset ? "" : " disabled"}><option value="">${escape(dt("selectVersion"))}</option>${versions.map(item => option(item.id, `v${item.version_number} · ${item.processing_status}`, selectedVersion)).join("")}</select>` : ""}</div>${assetTiles()}</div>`;
+  const toolbar = `<div class="ff-browse-toolbar"><div class="ff-toolbar-control" role="button" tabindex="0" data-direct-action="appearance">▦ ${escape(dt("appearance"))}</div><div class="ff-toolbar-control" role="button" tabindex="0">☷ ${escape(dt("fields"))}</div><div class="ff-toolbar-control" role="button" tabindex="0">≡ ${escape(dt("sortBy"))}: ${escape(dt("custom"))}</div><span class="ff-toolbar-spacer"></span><div class="ff-toolbar-control" role="button" tabindex="0" data-direct-action="invite">${escape(dt("share"))}</div><div class="ff-toolbar-add" role="button" tabindex="0" data-direct-action="export">+</div></div>`;
+  const breadcrumb = selectedProject
+    ? `<span class="ff-breadcrumb-link" role="button" tabindex="0" data-direct-project="">⌂</span><span>/</span><strong>${escape(project?.name ?? dt("title"))}</strong>`
+    : `<span>⌂</span><span>/</span><strong>${escape(dt("title"))}</strong>`;
+  const projectsView = projects.length
+    ? `<div class="ff-project-grid">${projects.map(item => `<div class="ff-project-card" role="button" tabindex="0" data-direct-project="${escape(item.id)}"><span class="ff-project-mark">▦</span><strong>${escape(item.name)}</strong><small>${escape(item.description ?? `${item.asset_count} ${dt("assets")}`)}</small></div>`).join("")}</div>`
+    : `<div class="ff-empty-state"><div class="ff-empty-glyph">▦</div><p>${escape(dt("emptyProjects"))}</p></div>`;
+  return `<div class="ff-page ff-browse-page"><div class="ff-breadcrumb">${breadcrumb}</div>${toolbar}${selectedProject ? assetTiles() : projectsView}</div>`;
 }
 
 function modal(): string {
@@ -262,6 +268,16 @@ root?.addEventListener("click", event => {
   if (action === "comment") void comment();
   if (action === "appearance" || action === "export" || action === "invite") { dialog = action === "appearance" ? "appearance" : action === "export" ? "export" : "invite"; render(); }
   if (action === "close-dialog") { dialog = ""; render(); }
+  const projectTarget = (event.target as HTMLElement).closest<HTMLElement>("[data-direct-project]");
+  if (projectTarget) {
+    const projectId = projectTarget.dataset.directProject ?? "";
+    if (projectId !== selectedProject) {
+      const generation = operations.begin(); selectedProject = projectId; selectedAsset = ""; selectedVersion = ""; assets = []; versions = []; comments = [];
+      if (!projectId) { render(); return; }
+      void (async () => { busy = true; render(); try { await loadAssets(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(caught); } finally { if (operations.current(generation)) { busy = false; render(); } } })();
+    }
+    return;
+  }
   const assetId = (event.target as HTMLElement).closest<HTMLElement>("[data-direct-asset]")?.dataset.directAsset;
   if (assetId && assetId !== selectedAsset) {
     const generation = operations.begin(); selectedAsset = assetId; selectedVersion = "";

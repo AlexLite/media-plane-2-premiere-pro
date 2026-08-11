@@ -324,7 +324,7 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-primary-tab { background: transparent; border: 1px solid transparent; border-radius: 6px; box-sizing: border-box; color: #99999d; cursor: pointer; flex: 1 1 0; font-size: 12px; font-weight: 600; height: 34px; line-height: 20px; padding: 7px; text-align: center; }
 .ff-primary-tab.active { background: #3a3a3d; border-color: #454548; color: #eeeef0; }
 #direct-freeframe-app { padding: 0; }
-.ff-page { color: #e6e6e8; padding: 14px 7px 18px; }
+.ff-page { color: #e6e6e8; padding: 10px 7px 18px; }
 .ff-onboarding { background: #111112; border: 0; border-radius: 0; box-sizing: border-box; margin: 0; min-height: 350px; padding: 0; text-align: center; width: 100%; }
 .ff-onboarding-content { box-sizing: border-box; margin: 0 auto; max-width: 330px; padding: 104px 16px 42px; text-align: center; }
 .ff-onboarding-mark { display: block; height: 70px; margin: 0 auto 24px; position: relative; width: 96px; }
@@ -345,12 +345,13 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-browser-waiting strong { color: #e6e6e9; font-size: 12px; }
 .ff-browser-waiting p { color: #9d9da4 !important; font-size: 11px !important; margin: 8px 0 0 !important; }
 .ff-browser-waiting b { color: #f0efff; letter-spacing: 1px; }
-.ff-section-toolbar { align-items: center; display: flex; justify-content: space-between; margin: 6px 0 14px; }
+.ff-section-toolbar { align-items: center; display: flex; justify-content: space-between; margin: 0 0 14px; }
 .ff-section-toolbar h2 { color: #f3f3f4; font-size: 14px; font-weight: 500; margin: 0; }
 .ff-section-toolbar > div { align-items: center; display: flex; gap: 7px; }
+.ff-section-actions { align-items: center; display: flex; gap: 7px; }
 .ff-section-toolbar button { margin: 0; }
 .ff-plus { background: #5f4bf3 !important; border-color: #6e5bff !important; border-radius: 6px !important; font-size: 17px !important; font-weight: 400 !important; height: 30px !important; line-height: 15px !important; min-height: 30px !important; padding: 3px !important; width: 30px !important; }
-.ff-current-card { align-items: center; background: #202022; border: 1px solid #2d2d31; border-radius: 8px; box-sizing: border-box; color: #9a9a9e; display: flex; justify-content: center; min-height: 158px; padding: 20px; text-align: center; width: 100%; }
+.ff-current-card { align-items: center; background: #202022; border: 1px solid #2d2d31; border-radius: 8px; box-sizing: border-box; color: #9a9a9e; display: flex; height: 158px; justify-content: center; min-height: 0; padding: 20px; text-align: center; width: 100%; }
 .ff-current-card p { color: #a0a0a5; margin: 0; }
 .ff-current-linked { color: #e9e9eb; cursor: pointer; justify-content: flex-start; text-align: left; }
 .ff-current-linked span:last-child { display: block; min-width: 0; }
@@ -374,13 +375,20 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-sequence-item small { color: #8d8d94; margin-top: 3px; }
 .ff-breadcrumb { align-items: center; border-bottom: 1px solid #29292c; color: #98989c; display: flex; gap: 9px; margin: -14px -7px 12px; padding: 11px 12px; }
 .ff-breadcrumb strong { color: #dedee0; font-size: 12px; }
-.ff-browse-toolbar { align-items: center; border-bottom: 1px solid #29292c; display: flex; flex-wrap: wrap; gap: 7px; margin: 0 -7px 12px; padding: 0 8px 12px; }
-.ff-browse-toolbar button { margin: 0; }
-.ff-toolbar-button { background: transparent !important; border-color: transparent !important; color: #e0e0e3 !important; height: 29px !important; min-height: 29px !important; padding: 5px 7px !important; }
-.ff-toolbar-button:hover { background: #2b2b2f !important; border-color: #38383d !important; }
-.ff-browse-selectors { background: #202022; border: 1px solid #2e2e33; border-radius: 7px; margin-bottom: 12px; padding: 9px; }
-.ff-browse-selectors label { display: inline-block; margin: 0 5px 0 0; }
-.ff-browse-selectors select { display: inline-block; height: 28px; margin-right: 10px; max-width: 185px; padding: 4px 7px; width: auto; }
+.ff-browse-toolbar { align-items: center; border-bottom: 1px solid #29292c; display: flex; gap: 4px; margin: 0 -7px 18px; min-height: 34px; padding: 0 8px 12px; }
+.ff-toolbar-control { border: 1px solid transparent; border-radius: 5px; box-sizing: border-box; color: #b9b9be; cursor: pointer; font-size: 11px; font-weight: 600; line-height: 27px; padding: 0 8px; white-space: nowrap; }
+.ff-toolbar-control:hover { background: #2b2b2f; border-color: #38383d; color: #f0f0f2; }
+.ff-share-control { background: #2a2a2d; border-color: #38383d; color: #d7d7db; }
+.ff-toolbar-spacer { flex: 1; }
+.ff-toolbar-add { align-items: center; background: #604cf5; border-radius: 6px; color: #fff; cursor: pointer; display: flex; font-size: 19px; height: 28px; justify-content: center; line-height: 1; margin-left: 2px; width: 28px; }
+.ff-project-grid { display: flex; flex-wrap: wrap; gap: 10px; padding: 4px 0; }
+.ff-project-card { background: #202022; border: 1px solid #303035; border-radius: 8px; box-sizing: border-box; cursor: pointer; display: block; flex: 1 1 145px; min-height: 118px; padding: 13px; }
+.ff-project-card:hover { background: #252528; border-color: #6757f7; }
+.ff-project-card strong, .ff-project-card small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ff-project-card strong { color: #e7e7ea; font-size: 12px; margin-top: 13px; }
+.ff-project-card small { color: #929299; font-size: 10px; margin-top: 4px; }
+.ff-project-mark { align-items: center; background: #2d2d33; border-radius: 5px; color: #9294a0; display: flex; font-size: 17px; height: 32px; justify-content: center; width: 36px; }
+.ff-breadcrumb-link { color: #c9c9cf; cursor: pointer; }
 .ff-modal-backdrop { align-items: center; background: rgba(0, 0, 0, .72); bottom: 0; display: flex; justify-content: center; left: 0; padding: 16px; position: fixed; right: 0; top: 0; z-index: 50; }
 .ff-modal, .ff-popover { background: #1c1c1e; border: 1px solid #2c2c30; border-radius: 8px; box-shadow: 0 14px 50px rgba(0, 0, 0, .55); box-sizing: border-box; max-width: 620px; padding: 18px; width: 100%; }
 .ff-modal-title { align-items: center; border-bottom: 1px solid #303034; display: flex; justify-content: space-between; margin: -18px -18px 16px; padding: 16px 18px; }

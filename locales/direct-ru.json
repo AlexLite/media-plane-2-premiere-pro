@@ -53,6 +53,7 @@
   "version": "Версия",
   "selectVersion": "Выберите версию",
   "refresh": "Обновить",
+  "assets": "медиа",
   "emptyProjects": "Доступных проектов нет.",
   "emptyAssets": "В этом проекте нет медиафайлов.",
   "reviewTitle": "Прямое ревью FreeFrame",

@@ -53,6 +53,7 @@
   "version": "Version",
   "selectVersion": "Select a version",
   "refresh": "Refresh",
+  "assets": "assets",
   "emptyProjects": "No available projects.",
   "emptyAssets": "No media assets in this project.",
   "reviewTitle": "Direct FreeFrame review",
