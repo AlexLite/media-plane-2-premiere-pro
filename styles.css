@@ -359,6 +359,9 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-current-linked small { color: #8f8f94; margin-top: 3px; }
 .ff-all-assets-title { margin-top: 28px; }
 .ff-empty-state { align-items: center; color: #8e8e93; display: flex; flex-direction: column; justify-content: center; min-height: 230px; text-align: center; }
+.ff-empty-dropzone { border: 1px dashed #343742; border-radius: 18px; margin: 8px 0 4px; min-height: 260px; padding: 24px 16px; }
+.ff-empty-dropzone .ff-empty-glyph { background: transparent; color: #424550; font-size: 42px; height: 76px; width: 76px; }
+.ff-empty-dropzone p { color: #9799a3; font-size: 12px; }
 .ff-empty-state p { color: #9a9a9e; margin: 9px 0 0; }
 .ff-empty-action { background: #604cf5 !important; border-color: #7563ff !important; color: #fff !important; margin-top: 16px !important; }
 .ff-empty-glyph { align-items: center; background: #2b2c32; border-radius: 8px; color: #4c4d57; display: inline-flex; font-size: 31px; height: 58px; justify-content: center; width: 58px; }
@@ -385,6 +388,7 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-breadcrumb strong { color: #dedee0; font-size: 12px; }
 .ff-icon { fill: none; height: 16px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; vertical-align: middle; width: 16px; }
 .ff-project-context { align-items: center; background: #1b1b1e; border: 1px solid #2b2b30; border-radius: 7px; display: flex; gap: 9px; margin: 0 0 10px; min-height: 48px; padding: 7px 10px; }
+.ff-project-context:hover { background: #222226; border-color: #3a3a43; }
 .ff-project-context-mark { align-items: center; background: #33333b; border-radius: 6px; color: #b8b8c3; display: flex; height: 30px; justify-content: center; width: 30px; }
 .ff-project-context strong, .ff-project-context small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ff-project-context strong { color: #eeeeF1; font-size: 12px; }
