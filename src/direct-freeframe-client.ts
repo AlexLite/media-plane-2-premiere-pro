@@ -95,7 +95,7 @@ export class DirectFreeFrameClient {
     return this.parse(await fetchWithTimeout(`${this.root}${path}`, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) }));
   }
   private async devicePost(path: string, body: unknown): Promise<unknown> {
-    return this.parse(await fetchWithTimeout(`${this.root}${path}`, { method: "POST", credentials: "omit", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    return this.parse(await fetchWithTimeout(`${this.root}${path}`, { method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
   }
   private async renewSession(): Promise<void> {
     if (!this.sessionHooks) throw new FreeFrameError("FreeFrame session expired", 401);
@@ -128,7 +128,7 @@ export class DirectFreeFrameClient {
   async startDeviceAuthorization(): Promise<DeviceAuthorization> { return deviceAuthorization(await this.devicePost("/auth/device/start", { client_id: "premiere-uxp" })); }
   async pollDeviceAuthorization(deviceCode: string): Promise<DirectTokens | undefined> {
     if (!deviceCode) throw new FreeFrameError("Device code is missing", 400);
-    const response = await fetchWithTimeout(`${this.root}/auth/device/poll`, { method: "POST", credentials: "omit", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ device_code: deviceCode, client_id: "premiere-uxp" }) });
+    const response = await fetchWithTimeout(`${this.root}/auth/device/poll`, { method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_code: deviceCode, client_id: "premiere-uxp" }) });
     const raw = await response.text();
     let body: unknown;
     if (raw) try { body = JSON.parse(raw); } catch { throw new FreeFrameError("FreeFrame returned invalid JSON", 502); }
