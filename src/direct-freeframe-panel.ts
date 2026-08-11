@@ -30,6 +30,7 @@ let error = "";
 
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
 const option = (value: string, label: string, selected: string) => `<option value="${escape(value)}"${value === selected ? " selected" : ""}>${escape(label)}</option>`;
+const initials = (value: string) => value.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "FF";
 
 function createClient(url: string): DirectFreeFrameClient {
   return new DirectFreeFrameClient(url, {
@@ -43,14 +44,38 @@ function connectionForm(): string {
   return `<section class="direct-card direct-empty"><div class="direct-empty-icon">FF</div><h2>${escape(dt("title"))}</h2><p>${escape(dt("loginRequired"))}</p><button class="compact" data-direct-action="settings">${escape(dt("openSettings"))}</button>${error ? `<p class="error">${escape(error)}</p>` : ""}</section>`;
 }
 
-function selectors(): string {
+function legacySelectors(): string {
   return `<section class="direct-card"><div class="direct-identity"><div><strong>${escape(currentUser?.name ?? "")}</strong><span>${escape(currentUser?.email ?? "")}</span></div><button class="secondary compact" data-direct-action="logout">${escape(dt("logout"))}</button></div><label for="directProject">${escape(dt("project"))}</label><select id="directProject"><option value="">${escape(dt("selectProject"))}</option>${projects.map(item => option(item.id, `${item.name} (${item.asset_count})`, selectedProject)).join("")}</select>${projects.length ? "" : `<p class="hint">${escape(dt("emptyProjects"))}</p>`}<label for="directAsset">${escape(dt("asset"))}</label><select id="directAsset"${selectedProject ? "" : " disabled"}><option value="">${escape(dt("selectAsset"))}</option>${assets.map(item => option(item.id, item.name, selectedAsset)).join("")}</select>${selectedProject && !assets.length ? `<p class="hint">${escape(dt("emptyAssets"))}</p>` : ""}<label for="directVersion">${escape(dt("version"))}</label><select id="directVersion"${selectedAsset ? "" : " disabled"}><option value="">${escape(dt("selectVersion"))}</option>${versions.map(item => option(item.id, `v${item.version_number} — ${item.processing_status}`, selectedVersion)).join("")}</select><button class="secondary" data-direct-action="refresh"${busy ? " disabled" : ""}>${escape(dt("refresh"))}</button>${error ? `<p class="error">${escape(error)}</p>` : ""}</section>`;
+}
+
+function selectors(): string {
+  const project = projects.find(item => item.id === selectedProject);
+  const asset = assets.find(item => item.id === selectedAsset);
+  const version = versions.find(item => item.id === selectedVersion);
+  const selected = [project?.name, asset?.name, version ? `v${version.version_number}` : undefined].filter((item): item is string => Boolean(item));
+  const trail = selected.length
+    ? selected.map(item => `<span>${escape(item)}</span>`).join(`<i aria-hidden="true">›</i>`)
+    : `<span class="direct-context-empty">${escape(dt("selectProject"))}</span>`;
+  return `<section class="direct-workspace"><div class="direct-workspace-head"><div class="direct-profile"><span class="direct-avatar" aria-hidden="true">${escape(initials(currentUser?.name ?? ""))}</span><div><strong>${escape(currentUser?.name ?? "")}</strong><span>${escape(currentUser?.email ?? "")}</span></div></div><div class="direct-workspace-actions"><button class="secondary compact" data-direct-action="refresh"${busy ? " disabled" : ""}>${escape(dt("refresh"))}</button><button class="secondary compact direct-signout" data-direct-action="logout">${escape(dt("logout"))}</button></div></div><div class="direct-context">${trail}</div><div class="direct-picker-grid"><div class="direct-picker"><label for="directProject">${escape(dt("project"))}</label><select id="directProject"><option value="">${escape(dt("selectProject"))}</option>${projects.map(item => option(item.id, `${item.name} (${item.asset_count})`, selectedProject)).join("")}</select>${projects.length ? "" : `<p class="hint">${escape(dt("emptyProjects"))}</p>`}</div><div class="direct-picker"><label for="directAsset">${escape(dt("asset"))}</label><select id="directAsset"${selectedProject ? "" : " disabled"}><option value="">${escape(dt("selectAsset"))}</option>${assets.map(item => option(item.id, item.name, selectedAsset)).join("")}</select>${selectedProject && !assets.length ? `<p class="hint">${escape(dt("emptyAssets"))}</p>` : ""}</div><div class="direct-picker"><label for="directVersion">${escape(dt("version"))}</label><select id="directVersion"${selectedAsset ? "" : " disabled"}><option value="">${escape(dt("selectVersion"))}</option>${versions.map(item => option(item.id, `v${item.version_number} · ${item.processing_status}`, selectedVersion)).join("")}</select></div></div>${error ? `<p class="error direct-workspace-error">${escape(error)}</p>` : ""}</section>`;
+}
+
+function legacyReview(): string {
+  if (!currentUser) return connectionForm();
+  const list = comments.length ? comments.map(comment => `<div class="comment-card${comment.resolved ? " resolved" : ""}"><div class="comment-meta"><span>${escape(comment.author?.name ?? comment.guest_author?.name ?? "FreeFrame")}${comment.timecode_start === null ? "" : ` · ${comment.timecode_start.toFixed(2)}s`}</span><button class="compact secondary" data-direct-resolve="${escape(comment.id)}">${escape(dt(comment.resolved ? "reopen" : "resolve"))}</button></div><p>${escape(comment.body)}</p></div>`).join("") : `<p class="hint">${escape(dt("noComments"))}</p>`;
+  return `${selectors()}<section class="direct-card"><h2>${escape(dt("reviewTitle"))}</h2>${selectedVersion ? `<div class="comment-composer"><label for="directComment">${escape(dt("comment"))}</label><textarea id="directComment" placeholder="${escape(dt("commentPlaceholder"))}"></textarea><button data-direct-action="comment"${busy ? " disabled" : ""}>${escape(dt("addComment"))}</button></div><div class="comment-list">${list}</div>` : `<p>${escape(dt("selectVersion"))}</p>`}</section>`;
 }
 
 function review(): string {
   if (!currentUser) return connectionForm();
-  const list = comments.length ? comments.map(comment => `<div class="comment-card${comment.resolved ? " resolved" : ""}"><div class="comment-meta"><span>${escape(comment.author?.name ?? comment.guest_author?.name ?? "FreeFrame")}${comment.timecode_start === null ? "" : ` · ${comment.timecode_start.toFixed(2)}s`}</span><button class="compact secondary" data-direct-resolve="${escape(comment.id)}">${escape(dt(comment.resolved ? "reopen" : "resolve"))}</button></div><p>${escape(comment.body)}</p></div>`).join("") : `<p class="hint">${escape(dt("noComments"))}</p>`;
-  return `${selectors()}<section class="direct-card"><h2>${escape(dt("reviewTitle"))}</h2>${selectedVersion ? `<div class="comment-composer"><label for="directComment">${escape(dt("comment"))}</label><textarea id="directComment" placeholder="${escape(dt("commentPlaceholder"))}"></textarea><button data-direct-action="comment"${busy ? " disabled" : ""}>${escape(dt("addComment"))}</button></div><div class="comment-list">${list}</div>` : `<p>${escape(dt("selectVersion"))}</p>`}</section>`;
+  const version = versions.find(item => item.id === selectedVersion);
+  const list = comments.length
+    ? comments.map(comment => `<article class="comment-card${comment.resolved ? " resolved" : ""}"><div class="comment-meta"><div><strong>${escape(comment.author?.name ?? comment.guest_author?.name ?? "FreeFrame")}</strong><span>${comment.timecode_start === null ? "" : `${comment.timecode_start.toFixed(2)}s`}</span></div><button class="compact secondary" data-direct-resolve="${escape(comment.id)}">${escape(dt(comment.resolved ? "reopen" : "resolve"))}</button></div><p>${escape(comment.body)}</p></article>`).join("")
+    : `<p class="hint">${escape(dt("noComments"))}</p>`;
+  const detail = version ? `v${version.version_number} · ${version.processing_status}` : dt("selectVersion");
+  const body = selectedVersion
+    ? `<div class="comment-composer"><label for="directComment">${escape(dt("comment"))}</label><textarea id="directComment" placeholder="${escape(dt("commentPlaceholder"))}"></textarea><div class="direct-composer-actions"><span>${escape(dt("commentPlaceholder"))}</span><button data-direct-action="comment"${busy ? " disabled" : ""}>${escape(dt("addComment"))}</button></div></div><div class="comment-list direct-comment-list">${list}</div>`
+    : `<div class="direct-review-empty"><div class="direct-empty-icon">+</div><p>${escape(dt("selectVersion"))}</p></div>`;
+  return `${selectors()}<section class="direct-review-surface"><div class="direct-review-heading"><div><h2>${escape(dt("reviewTitle"))}</h2><p>${escape(detail)}</p></div><span class="direct-live-dot" aria-hidden="true"></span></div>${body}</section>`;
 }
 
 function media(): string { return currentUser ? selectors() : connectionForm(); }

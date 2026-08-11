@@ -216,3 +216,95 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .direct-empty-icon { align-items: center; background: #253556; border-radius: 10px; color: #7aa3f5; display: inline-flex; font-size: 13px; font-weight: 700; height: 38px; justify-content: center; margin-bottom: 10px; width: 38px; }
 .direct-empty h2 { margin-bottom: 5px; }
 .direct-empty button { width: auto; }
+
+/* FreeFrame workspace: an original compact review layout for Premiere panels. */
+.direct-workspace,
+.direct-review-surface {
+  background: #121217;
+  border: 1px solid #2b2c35;
+  border-radius: 8px;
+  margin-top: 10px;
+  overflow: hidden;
+}
+.direct-workspace-head {
+  align-items: center;
+  background: #18181f;
+  border-bottom: 1px solid #2b2c35;
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+.direct-profile { align-items: center; display: flex; min-width: 0; }
+.direct-profile > div { min-width: 0; }
+.direct-profile strong,
+.direct-profile span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.direct-profile strong { color: #f2f2f5; font-size: 12px; font-weight: 600; }
+.direct-profile > div > span { color: #8e909c; font-size: 10px; margin-top: 2px; }
+.direct-avatar {
+  align-items: center;
+  background: #2b426e;
+  border: 1px solid #476aa6;
+  border-radius: 50%;
+  color: #dce8ff;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  height: 26px;
+  justify-content: center;
+  margin-right: 8px;
+  width: 26px;
+}
+.direct-workspace-actions { display: flex; flex: 0 0 auto; gap: 5px; margin-left: 8px; }
+.direct-workspace-actions button { margin: 0; }
+.direct-workspace-actions .direct-signout { color: #aeb0bc !important; }
+.direct-context {
+  align-items: center;
+  background: #101015;
+  border-bottom: 1px solid #22232b;
+  color: #bfc5d2;
+  display: flex;
+  font-size: 10px;
+  gap: 6px;
+  min-height: 28px;
+  overflow: hidden;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+.direct-context span { overflow: hidden; text-overflow: ellipsis; }
+.direct-context i { color: #5e6270; font-size: 14px; font-style: normal; }
+.direct-context-empty { color: #747784; }
+.direct-picker-grid { display: flex; flex-direction: column; padding: 10px 12px 12px; }
+.direct-picker + .direct-picker { margin-top: 8px; }
+.direct-picker label { color: #aeb1bd; font-size: 10px; margin: 0 0 4px; }
+.direct-picker select { background: #191a20 !important; font-size: 11px; height: 30px; padding: 5px 8px; }
+.direct-picker .hint { font-size: 10px; margin: 4px 0 0; }
+.direct-workspace-error { margin: 0 12px 11px; }
+.direct-review-heading {
+  align-items: center;
+  background: #18181f;
+  border-bottom: 1px solid #2b2c35;
+  display: flex;
+  justify-content: space-between;
+  padding: 11px 12px;
+}
+.direct-review-heading h2 { color: #f2f2f5; font-size: 13px; margin: 0 0 2px; }
+.direct-review-heading p { color: #858894; font-size: 10px; margin: 0; }
+.direct-live-dot { background: #5b8def; border-radius: 50%; box-shadow: 0 0 0 3px #26375b; height: 6px; width: 6px; }
+.direct-review-surface .comment-composer { background: #15151b; border-bottom: 1px solid #2b2c35; border-radius: 0; padding: 11px 12px; }
+.direct-review-surface .comment-composer textarea { background: #101015 !important; min-height: 64px; }
+.direct-composer-actions { align-items: center; display: flex; justify-content: space-between; margin-top: 7px; }
+.direct-composer-actions > span { color: #6d7080; font-size: 10px; overflow: hidden; padding-right: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.direct-composer-actions button { margin: 0; }
+.direct-comment-list { margin: 0; padding: 10px 12px 12px; }
+.direct-comment-list .comment-card { background: #18181e; border-color: #2b2c35; border-radius: 6px; margin: 0 0 7px; padding: 10px; }
+.direct-comment-list .comment-card:last-child { margin-bottom: 0; }
+.direct-comment-list .comment-card:hover { background: #1d1e25; border-color: #3b3d49; }
+.direct-comment-list .comment-meta { align-items: center; margin-bottom: 6px; }
+.direct-comment-list .comment-meta > div { align-items: baseline; display: flex; gap: 7px; }
+.direct-comment-list .comment-meta strong { color: #d9dbe3; font-size: 11px; }
+.direct-comment-list .comment-meta span { color: #747784; font-size: 10px; }
+.direct-comment-list .comment-card p { color: #c5c7d0; font-size: 11px; line-height: 1.45; }
+.direct-review-empty { color: #858894; padding: 26px 12px; text-align: center; }
+.direct-review-empty .direct-empty-icon { background: #1e2d49; border: 1px solid #345283; border-radius: 50%; height: 30px; margin-bottom: 7px; width: 30px; }
+.direct-review-empty p { font-size: 11px; margin: 0; }
