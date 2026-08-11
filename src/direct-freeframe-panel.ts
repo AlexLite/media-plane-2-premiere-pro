@@ -160,6 +160,8 @@ async function startBrowserLogin(): Promise<void> {
   const generation = operations.begin(); error = "";
   try {
     const normalized = normalizeFreeFrameApiUrl(url);
+    currentUrl = normalized;
+    store.saveUrl(currentUrl);
     const next = createClient(normalized);
     const authorization = await next.startDeviceAuthorization();
     operations.assertCurrent(generation);
