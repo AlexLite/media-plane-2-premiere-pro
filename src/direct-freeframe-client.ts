@@ -9,6 +9,10 @@ export interface DirectProject { id: string; name: string; description: string |
 export interface DirectMediaFile { duration_seconds: number | null; fps: number | null }
 export interface DirectVersion { id: string; asset_id: string; version_number: number; processing_status: string; created_at: string; files: DirectMediaFile[] }
 export interface DirectAsset { id: string; project_id: string; name: string; asset_type: string; status: string; latest_version: DirectVersion | null }
+export interface DirectUploadFile { name: string; type: string; size: number; slice(start: number, end: number, signal?: AbortSignal): Blob | Promise<Blob> }
+export interface DirectUploadResult { assetId: string; versionId: string; status: string }
+interface DirectUploadInitiation { upload_id: string; s3_key: string; asset_id: string; version_id: string }
+interface DirectPresignedPart { presigned_url: string; part_number: number }
 export interface DirectSessionHooks {
   getRefreshToken(): Promise<string | undefined>;
   onTokens(tokens: DirectTokens): Promise<void>;
@@ -84,6 +88,19 @@ function asset(value: unknown): DirectAsset {
   const body = object(value);
   if (!body || !id(body.id) || !id(body.project_id) || !text(body.name) || !text(body.asset_type) || !text(body.status)) throw new FreeFrameError("FreeFrame returned an invalid asset", 502);
   return { id: body.id, project_id: body.project_id, name: body.name, asset_type: body.asset_type, status: body.status, latest_version: body.latest_version === null || body.latest_version === undefined ? null : version(body.latest_version) };
+}
+function uploadInitiation(value: unknown): DirectUploadInitiation {
+  const body = object(value);
+  if (!body || !text(body.upload_id) || !text(body.s3_key) || !id(body.asset_id) || !id(body.version_id)) throw new FreeFrameError("FreeFrame returned an invalid upload initiation", 502);
+  return { upload_id: body.upload_id, s3_key: body.s3_key, asset_id: body.asset_id, version_id: body.version_id };
+}
+function presignedPart(value: unknown, expectedPart: number): DirectPresignedPart {
+  const body = object(value);
+  if (!body || !text(body.presigned_url) || body.part_number !== expectedPart) throw new FreeFrameError("FreeFrame returned an invalid upload part", 502);
+  let url: URL;
+  try { url = new URL(body.presigned_url); } catch { throw new FreeFrameError("FreeFrame returned an invalid upload URL", 502); }
+  if (url.protocol !== "https:" || url.username || url.password) throw new FreeFrameError("FreeFrame returned an invalid upload URL", 502);
+  return { presigned_url: body.presigned_url, part_number: expectedPart };
 }
 
 export class DirectFreeFrameClient {
@@ -187,4 +204,29 @@ export class DirectFreeFrameClient {
   async comments(assetId: string, versionId: string, signal?: AbortSignal): Promise<ReviewComment[]> { const body = await this.request(`/assets/${encodeURIComponent(assetId)}/comments?version_id=${encodeURIComponent(versionId)}`, { signal }); if (!Array.isArray(body)) throw new FreeFrameError("FreeFrame returned invalid comments", 502); return body.map(item => parseComment(item, assetId, versionId)); }
   async createComment(assetId: string, versionId: string, input: ReviewCommentCreateInput, signal?: AbortSignal): Promise<ReviewComment> { const body = input.body.trim(); if (!body) throw new FreeFrameError("Comment is empty", 400); return parseComment(await this.request(`/assets/${encodeURIComponent(assetId)}/comments`, { method: "POST", body: JSON.stringify({ ...input, body, version_id: versionId }), signal }), assetId, versionId); }
   async toggleResolved(assetId: string, versionId: string, commentId: string, signal?: AbortSignal): Promise<ReviewComment> { return parseComment(await this.request(`/comments/${encodeURIComponent(commentId)}/resolve`, { method: "POST", signal }), assetId, versionId); }
+  async upload(projectId: string, assetName: string, file: DirectUploadFile, existingAssetId?: string, onProgress?: (progress: number) => void, signal?: AbortSignal): Promise<DirectUploadResult> {
+    if (!id(projectId) || !assetName.trim() || !file.name || !file.type || !Number.isFinite(file.size) || file.size <= 0 || (existingAssetId && !id(existingAssetId))) throw new FreeFrameError("Invalid upload request", 400);
+    const initiation = uploadInitiation(await this.request("/upload/initiate", { method: "POST", body: JSON.stringify({ project_id: projectId, asset_name: assetName.trim(), original_filename: file.name, mime_type: file.type, file_size_bytes: file.size, ...(existingAssetId ? { asset_id: existingAssetId } : {}) }), signal }));
+    const total = Math.ceil(file.size / (10 * 1024 * 1024));
+    if (total > 10_000) throw new FreeFrameError("Upload exceeds the multipart part limit", 400);
+    const parts: Array<{ PartNumber: number; ETag: string }> = [];
+    try {
+      for (let part = 1; part <= total; part++) {
+        if (signal?.aborted) throw new DOMException("Upload cancelled", "AbortError");
+        const presign = presignedPart(await this.request("/upload/presign-part", { method: "POST", body: JSON.stringify({ s3_key: initiation.s3_key, upload_id: initiation.upload_id, part_number: part }), signal }), part);
+        const body = await file.slice((part - 1) * 10 * 1024 * 1024, Math.min(part * 10 * 1024 * 1024, file.size), signal);
+        const response = await fetchWithTimeout(presign.presigned_url, { method: "PUT", body, signal }, 120_000);
+        const etag = response.headers.get("ETag")?.trim();
+        if (!response.ok || !etag) throw new FreeFrameError(`FreeFrame upload part ${part} failed`, response.status);
+        parts.push({ PartNumber: part, ETag: etag });
+        onProgress?.(part / total);
+      }
+      const completed = object(await this.request("/upload/complete", { method: "POST", body: JSON.stringify({ s3_key: initiation.s3_key, upload_id: initiation.upload_id, asset_id: initiation.asset_id, version_id: initiation.version_id, parts }), signal }));
+      if (!completed || completed.asset_id !== initiation.asset_id || completed.version_id !== initiation.version_id || !text(completed.status)) throw new FreeFrameError("FreeFrame returned an invalid upload completion", 502);
+      return { assetId: initiation.asset_id, versionId: initiation.version_id, status: completed.status };
+    } catch (error) {
+      await this.request("/upload/abort", { method: "POST", body: JSON.stringify({ s3_key: initiation.s3_key, upload_id: initiation.upload_id, version_id: initiation.version_id }) }).catch(() => undefined);
+      throw error;
+    }
+  }
 }

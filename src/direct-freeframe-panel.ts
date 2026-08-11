@@ -9,12 +9,14 @@ import { DirectFreeFrameStore } from "./persistence";
 import { PremiereAdapter } from "./premiere";
 import { createCommentAtPlayhead } from "./review-comments";
 import { FREEFRAME_AUTH_EVENT, normalizeShellMode, normalizeShellView, requestShellView, SHELL_MODE_EVENT, SHELL_VIEW_EVENT, USER_CONFIG_EVENT, type ShellMode, type ShellView } from "./shell-events";
+import { UxpMediaFiles, type SelectedMediaFile } from "./uxp-media";
 
 declare const require: (name: string) => { shell?: { openExternal?(url: string, developerText?: string): Promise<string> } };
 
 const root = document.querySelector<HTMLDivElement>("#direct-freeframe-app");
 const store = new DirectFreeFrameStore();
 const premiere = new PremiereAdapter();
+const mediaFiles = new UxpMediaFiles();
 const operations = new OperationGeneration();
 let mode: ShellMode = normalizeShellMode(document.body.dataset.activeMode);
 let view: ShellView = normalizeShellView(document.body.dataset.activeView);
@@ -32,6 +34,9 @@ let activeSequence: SequenceInfo | undefined;
 let activeSequenceAsset: DirectAsset | undefined;
 const assetCache = new Map<string, DirectAsset>();
 let activeSequenceRequest = 0;
+let exportFile: SelectedMediaFile | undefined;
+let exportProject = "";
+let exportProgress: number | undefined;
 let busy = false;
 let error = "";
 let dialog: "" | "appearance" | "export" | "invite" = "";
@@ -124,7 +129,12 @@ function modal(): string {
   if (!dialog) return "";
   if (dialog === "appearance") return `<div class="ff-modal-backdrop"><section class="ff-popover"><div class="ff-popover-row"><strong>${escape(dt("layout"))}</strong><div class="ff-segmented"><button class="active">▦</button><button>☷</button></div></div><div class="ff-popover-row"><strong>${escape(dt("cardSize"))}</strong><div class="ff-segmented"><button>S</button><button class="active">M</button><button>L</button></div></div><div class="ff-popover-row"><strong>${escape(dt("thumbnailScale"))}</strong><button class="secondary compact">Fit⌄</button></div><div class="ff-popover-row"><strong>${escape(dt("showCardInfo"))}</strong><span class="ff-toggle active"></span></div><div class="ff-popover-row"><strong>${escape(dt("titles"))}</strong><button class="secondary compact">1 Line⌄</button></div><button class="ff-modal-close" data-direct-action="close-dialog">×</button></section></div>`;
   if (dialog === "invite") return `<div class="ff-modal-backdrop"><section class="ff-modal ff-invite-modal"><div class="ff-modal-title"><span class="ff-gradient-dot"></span><h2>${escape(dt("addToProject"))}</h2></div><div class="ff-invite-input"><input placeholder="${escape(dt("nameOrEmail"))}"/><select><option>${escape(dt("fullAccess"))}</option></select></div><p class="hint">${escape(dt("addToProject"))}</p><div class="ff-invite-space"></div><textarea placeholder="${escape(dt("addMessage"))}"></textarea><div class="ff-modal-actions"><button class="secondary" data-direct-action="close-dialog">${escape(dt("cancel"))}</button><button disabled>${escape(dt("add"))}</button></div></section></div>`;
-  return `<div class="ff-modal-backdrop"><section class="ff-modal"><div class="ff-modal-title"><h2>${escape(dt("exportTitle"))}</h2><button class="ff-modal-close" data-direct-action="close-dialog">×</button></div><div class="ff-form-row"><label>${escape(dt("exportName"))}</label><input value="${escape(assets.find(item => item.id === selectedAsset)?.name ?? "")}"/></div><div class="ff-form-row"><label>${escape(dt("uploadLocation"))}</label><select><option>${escape(dt("selectProject"))}</option></select></div><div class="ff-form-row"><label>${escape(dt("range"))}</label><select><option>${escape(dt("entireSequence"))}</option></select></div><div class="ff-form-row"><label>${escape(dt("preset"))}</label><select><option>Match Source</option></select></div><div class="ff-form-row"><label>${escape(dt("markersAsComments"))}</label><span class="ff-toggle"></span></div><div class="ff-form-row"><label>${escape(dt("saveLocalCopy"))}</label><span class="ff-toggle"></span></div><p class="hint">${escape(dt("exportUnavailable"))}</p><div class="ff-modal-actions"><button class="secondary" data-direct-action="close-dialog">${escape(dt("cancel"))}</button><button disabled>${escape(dt("exportSequence"))}</button></div></section></div>`;
+  const existing = activeSequenceAsset;
+  const projectId = existing?.project_id ?? exportProject;
+  const canExport = Boolean(activeSequence && exportFile && projectId && !busy);
+  const fileLabel = exportFile ? `${exportFile.name} (${Math.ceil(exportFile.size / 1024 / 1024)} MB)` : dt("selectAsset");
+  const progress = exportProgress === undefined ? "" : `<p class="hint">${Math.round(exportProgress * 100)}%</p>`;
+  return `<div class="ff-modal-backdrop"><section class="ff-modal"><div class="ff-modal-title"><h2>${escape(dt("exportTitle"))}</h2><button class="ff-modal-close" data-direct-action="close-dialog">×</button></div><div class="ff-form-row"><label for="directExportName">${escape(dt("exportName"))}</label><input id="directExportName" value="${escape(existing?.name ?? activeSequence?.name ?? "")}"/></div><div class="ff-form-row"><label for="directExportProject">${escape(dt("uploadLocation"))}</label><select id="directExportProject"${existing ? " disabled" : ""}><option value="">${escape(dt("selectProject"))}</option>${projects.map(project => option(project.id, project.name, projectId)).join("")}</select></div><div class="ff-form-row"><label>${escape(dt("asset"))}</label><button class="secondary" data-direct-action="select-export-file"${busy ? " disabled" : ""}>${escape(fileLabel)}</button></div><div class="ff-form-row"><label>${escape(dt("range"))}</label><span>${escape(dt("entireSequence"))}</span></div>${existing ? `<p class="hint">${escape(`v${existing.latest_version?.version_number ?? 0} → new version`)}</p>` : ""}${progress}${error ? `<p class="error">${escape(error)}</p>` : ""}<div class="ff-modal-actions"><button class="secondary" data-direct-action="close-dialog"${busy ? " disabled" : ""}>${escape(dt("cancel"))}</button><button data-direct-action="export-confirm"${canExport ? "" : " disabled"}>${escape(dt("exportSequence"))}</button></div></section></div>`;
 }
 
 function review(): string { return currentUser ? sequencePage() : connectionForm(); }
@@ -316,6 +326,51 @@ async function comment(): Promise<void> {
   finally { if (operations.current(generation)) { busy = false; render(); } }
 }
 
+async function selectExportFile(): Promise<void> {
+  if (busy) return;
+  try { exportFile = await mediaFiles.selectExported(); error = ""; }
+  catch (caught) { fail(caught); }
+  render();
+}
+
+async function exportCurrentSequence(): Promise<void> {
+  if (!client || !exportFile || busy) return;
+  const context = await premiere.context();
+  if (context.status !== "ready") { error = dt("sequenceNotExported"); render(); return; }
+  const existing = store.getSequenceBinding(currentUrl, context.sequence.projectGuid, context.sequence.id);
+  const projectId = existing?.projectId ?? exportProject;
+  const name = root?.querySelector<HTMLInputElement>("#directExportName")?.value.trim() ?? context.sequence.name;
+  if (!projectId || !name) return;
+  const generation = operations.begin();
+  busy = true; error = ""; exportProgress = 0; render();
+  try {
+    const result = await client.upload(projectId, name, exportFile, existing?.assetId, progress => {
+      if (operations.current(generation)) { exportProgress = progress; render(); }
+    });
+    operations.assertCurrent(generation);
+    store.saveSequenceBinding({ serverUrl: currentUrl, projectGuid: context.sequence.projectGuid, sequenceId: context.sequence.id, projectId, assetId: result.assetId });
+    const nextAssets = await client.assets(projectId);
+    operations.assertCurrent(generation);
+    cacheAssets(nextAssets);
+    activeSequence = context.sequence;
+    activeSequenceAsset = nextAssets.find(asset => asset.id === result.assetId);
+    selectedProject = projectId;
+    assets = nextAssets;
+    selectedAsset = result.assetId;
+    versions = await client.versions(result.assetId);
+    operations.assertCurrent(generation);
+    selectedVersion = result.versionId;
+    comments = [];
+    dialog = "";
+    exportFile = undefined;
+    exportProgress = undefined;
+  } catch (caught) {
+    if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(caught);
+  } finally {
+    if (operations.current(generation)) { busy = false; exportProgress = undefined; render(); }
+  }
+}
+
 root?.addEventListener("click", event => {
   const action = (event.target as HTMLElement).closest<HTMLElement>("[data-direct-action]")?.dataset.directAction;
   if (action === "settings") requestShellView("settings");
@@ -324,8 +379,14 @@ root?.addEventListener("click", event => {
   if (action === "browser-cancel") { operations.begin(); clearBrowserLogin(); error = ""; render(); }
   if (action === "refresh") void (async () => { const generation = operations.begin(); busy = true; error = ""; render(); try { await loadProjects(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })();
   if (action === "comment") void comment();
-  if (action === "appearance" || action === "export" || action === "invite") { dialog = action === "appearance" ? "appearance" : action === "export" ? "export" : "invite"; render(); }
-  if (action === "close-dialog") { dialog = ""; render(); }
+  if (action === "select-export-file") void selectExportFile();
+  if (action === "export-confirm") void exportCurrentSequence();
+  if (action === "appearance" || action === "export" || action === "invite") {
+    dialog = action === "appearance" ? "appearance" : action === "export" ? "export" : "invite";
+    if (action === "export") { exportFile = undefined; exportProgress = undefined; exportProject = activeSequenceAsset?.project_id ?? selectedProject; }
+    render();
+  }
+  if (action === "close-dialog") { dialog = ""; exportFile = undefined; exportProgress = undefined; render(); }
   const projectTarget = (event.target as HTMLElement).closest<HTMLElement>("[data-direct-project]");
   if (projectTarget) {
     const projectId = projectTarget.dataset.directProject ?? "";
@@ -349,6 +410,7 @@ root?.addEventListener("change", event => {
   if (target.id === "directProject") { const generation = operations.begin(); selectedProject = target.value; selectedAsset = ""; selectedVersion = ""; void (async () => { busy = true; render(); try { await loadAssets(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })(); }
   if (target.id === "directAsset") { const generation = operations.begin(); selectedAsset = target.value; selectedVersion = ""; void (async () => { busy = true; render(); try { await loadVersions(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })(); }
   if (target.id === "directVersion") { const generation = operations.begin(); selectedVersion = target.value; void (async () => { busy = true; render(); try { await loadComments(generation); } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); } finally { if (operations.current(generation)) { busy = false; render(); } } })(); }
+  if (target.id === "directExportProject") { exportProject = target.value; render(); }
 });
 window.addEventListener(SHELL_MODE_EVENT, event => { mode = normalizeShellMode((event as CustomEvent<unknown>).detail); if (mode === "freeframe") void restore(); });
 window.addEventListener(SHELL_VIEW_EVENT, event => { view = normalizeShellView((event as CustomEvent<unknown>).detail); render(); });

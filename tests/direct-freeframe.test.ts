@@ -4,7 +4,7 @@ import { directLocaleKeys, dt } from "../src/direct-locale";
 import { DirectFreeFrameStore } from "../src/persistence";
 
 const ids = { user: "11111111-1111-4111-8111-111111111111", project: "22222222-2222-4222-8222-222222222222" };
-const response = (body: unknown, status = 200) => ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body) });
+const response = (body: unknown, status = 200, headers: Record<string, string> = {}) => ({ ok: status >= 200 && status < 300, status, headers: new Headers(headers), text: async () => JSON.stringify(body) });
 afterEach(() => vi.unstubAllGlobals());
 
 describe("direct FreeFrame mode", () => {
@@ -56,6 +56,28 @@ describe("direct FreeFrame mode", () => {
     expect(store.getSequenceBinding("https://freeframe.test", "premiere-project", "sequence-a")?.assetId).toBe("33333333-3333-4333-8333-333333333333");
     expect(store.getSequenceBinding("https://freeframe.test", "premiere-project", "sequence-b")).toBeUndefined();
     expect(store.getSequenceBinding("https://other-freeframe.test", "premiere-project", "sequence-a")).toBeUndefined();
+  });
+
+  it("uploads a new asset or version through the standard FreeFrame multipart lifecycle", async () => {
+    const assetId = "33333333-3333-4333-8333-333333333333", versionId = "44444444-4444-4444-8444-444444444444";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ access_token: "access", refresh_token: "refresh", token_type: "bearer" }))
+      .mockResolvedValueOnce(response({ upload_id: "upload-id", s3_key: "raw/test.mp4", asset_id: assetId, version_id: versionId }))
+      .mockResolvedValueOnce(response({ presigned_url: "https://storage.example/upload", part_number: 1 }))
+      .mockResolvedValueOnce(response({}, 200, { ETag: "part-etag" }))
+      .mockResolvedValueOnce(response({ status: "processing", asset_id: assetId, version_id: versionId }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new DirectFreeFrameClient("https://freeframe.test/api");
+    await client.login("editor@example.test", "password");
+    const file = { name: "cut.mp4", type: "video/mp4", size: 4, slice: () => new Blob(["test"], { type: "video/mp4" }) };
+    await expect(client.upload(ids.project, "Cut", file)).resolves.toEqual({ assetId, versionId, status: "processing" });
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual([
+      "https://freeframe.test/api/auth/login",
+      "https://freeframe.test/api/upload/initiate",
+      "https://freeframe.test/api/upload/presign-part",
+      "https://storage.example/upload",
+      "https://freeframe.test/api/upload/complete",
+    ]);
   });
 
   it("refreshes once and retries an authorized request after 401", async () => {
