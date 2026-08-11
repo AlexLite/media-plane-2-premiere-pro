@@ -310,21 +310,32 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .direct-review-empty p { font-size: 11px; margin: 0; }
 
 /* Original FreeFrame workspace modeled for the panel patterns in the reference flow. */
-.ff-shell-header { background: #111112; border-bottom: 1px solid #28282a; }
-.ff-appbar { align-items: center; display: flex; height: 34px; justify-content: space-between; padding: 0 6px; }
-.ff-app-title { align-items: center; color: #efeff0; display: flex; font-size: 12px; gap: 10px; }
+.ff-shell-header { background: #111112; border-bottom: 1px solid #28282a; box-sizing: border-box; display: block !important; margin: 0 !important; padding: 0; width: 100% !important; }
+.ff-appbar { box-sizing: border-box; display: block; height: 34px; overflow: hidden; padding: 0 6px; width: 100%; }
+.ff-app-title { align-items: center; color: #efeff0; display: flex; float: left; font-size: 12px; gap: 10px; height: 34px; }
 .ff-app-title span { color: #98989b; font-size: 14px; }
-.ff-app-actions { align-items: center; display: flex; gap: 5px; }
+.ff-app-actions { align-items: center; display: flex; float: right; gap: 5px; height: 34px; }
 .ff-locale-control { align-items: center; display: flex; margin: 0; }
 .ff-locale-control span { color: #76767a; font-size: 9px; margin-right: 4px; }
 .ff-locale-control select { background: #202022 !important; border-color: #333337 !important; font-size: 9px; height: 22px; min-width: 42px; padding: 2px 4px; width: 42px; }
-.ff-account { background: #202022 !important; border-color: #333337 !important; height: 23px !important; margin: 0 !important; min-height: 23px !important; padding: 3px !important; width: 25px !important; }
+.ff-account { align-items: center; background: #202022; border: 1px solid #333337; border-radius: 5px; box-sizing: border-box; cursor: pointer; display: flex; height: 23px; justify-content: center; padding: 3px; width: 25px; }
 .ff-account .shell-user-icon { height: 14px; opacity: .8; width: 14px; }
-.ff-primary-tabs { background: #19191b; display: flex; gap: 5px; padding: 5px; }
-.ff-primary-tab { background: transparent !important; border: 1px solid transparent !important; border-radius: 6px !important; color: #99999d !important; flex: 1 1 0; height: 34px !important; margin: 0; min-height: 34px !important; padding: 7px !important; }
-.ff-primary-tab.active { background: #3a3a3d !important; border-color: #454548 !important; color: #eeeef0 !important; }
+.ff-primary-tabs { background: #19191b; box-sizing: border-box; display: flex; gap: 5px; padding: 5px; width: 100%; }
+.ff-primary-tab { background: transparent; border: 1px solid transparent; border-radius: 6px; box-sizing: border-box; color: #99999d; cursor: pointer; flex: 1 1 0; font-size: 12px; font-weight: 600; height: 34px; line-height: 20px; padding: 7px; text-align: center; }
+.ff-primary-tab.active { background: #3a3a3d; border-color: #454548; color: #eeeef0; }
 #direct-freeframe-app { padding: 0; }
 .ff-page { color: #e6e6e8; padding: 14px 7px 18px; }
+.ff-onboarding { background: #111112; border: 0; border-radius: 0; box-sizing: border-box; margin: 0; min-height: 350px; padding: 0; text-align: center; width: 100%; }
+.ff-onboarding-content { box-sizing: border-box; margin: 0 auto; max-width: 330px; padding: 104px 16px 42px; text-align: center; }
+.ff-onboarding-mark { display: block; height: 70px; margin: 0 auto 24px; position: relative; width: 96px; }
+.ff-onboarding-mark i { background: #3b3b3d; border-radius: 18px; display: inline-block; height: 62px; margin: 4px; transform: skew(-10deg); vertical-align: middle; width: 10px; }
+.ff-onboarding-mark i:nth-child(1) { height: 72px; }
+.ff-onboarding-mark i:nth-child(2) { height: 57px; }
+.ff-onboarding-mark i:nth-child(3) { height: 37px; width: 8px; }
+.ff-onboarding h2 { color: #f1f1f2; font-size: 17px; line-height: 1.2; margin: 0 0 6px; }
+.ff-onboarding p { color: #a5a5aa; font-size: 12px; margin: 0 0 20px; }
+.ff-action-primary { background: #604cf5; border: 1px solid #7563ff; border-radius: 6px; color: #fff; cursor: pointer; display: inline-block; font-size: 13px; font-weight: 600; line-height: 19px; padding: 10px 18px; text-align: center; }
+.ff-action-primary:hover { background: #6e5cff; }
 .ff-section-toolbar { align-items: center; display: flex; justify-content: space-between; margin: 6px 0 14px; }
 .ff-section-toolbar h2 { color: #f3f3f4; font-size: 14px; font-weight: 500; margin: 0; }
 .ff-section-toolbar > div { align-items: center; display: flex; gap: 7px; }

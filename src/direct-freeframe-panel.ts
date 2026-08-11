@@ -42,7 +42,7 @@ function createClient(url: string): DirectFreeFrameClient {
 }
 
 function connectionForm(): string {
-  return `<section class="direct-card direct-empty"><div class="direct-empty-icon">FF</div><h2>${escape(dt("title"))}</h2><p>${escape(dt("loginRequired"))}</p><button class="compact" data-direct-action="settings">${escape(dt("openSettings"))}</button>${error ? `<p class="error">${escape(error)}</p>` : ""}</section>`;
+  return `<section class="ff-onboarding"><div class="ff-onboarding-content"><div class="ff-onboarding-mark" aria-hidden="true"><i></i><i></i><i></i></div><h2>${escape(dt("title"))}</h2><p>${escape(dt("loginRequired"))}</p><div class="ff-action-primary" role="button" tabindex="0" data-direct-action="settings">${escape(dt("openSettings"))}</div>${error ? `<p class="error">${escape(error)}</p>` : ""}</div></section>`;
 }
 
 function legacySelectors(): string {
