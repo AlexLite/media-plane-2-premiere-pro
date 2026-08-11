@@ -1,7 +1,7 @@
 import type { ReviewComment } from "./domain";
 import { DirectFreeFrameClient, directReviewVersion, type DirectAsset, type DirectProject, type DirectUser, type DirectVersion } from "./direct-freeframe-client";
 import { dt } from "./direct-locale";
-import { normalizeFreeFrameApiUrl } from "./freeframe-client";
+import { FreeFrameError, normalizeFreeFrameApiUrl } from "./freeframe-client";
 import { INTERFACE_LOCALE_EVENT } from "./locale-preference";
 import { OperationGeneration } from "./operation-generation";
 import { DirectFreeFrameStore } from "./persistence";
@@ -132,7 +132,11 @@ function render(): void {
   root.innerHTML = `<div class="direct-freeframe-surface">${view === "review" ? review() : view === "media" ? media() : diagnostics()}${modal()}</div>`;
 }
 
-function fail(): void { error = dt("requestFailed"); }
+function fail(caught?: unknown): void {
+  const detail = caught instanceof FreeFrameError ? `HTTP ${caught.status}` : caught instanceof Error ? caught.message : "";
+  error = detail ? `${dt("requestFailed")} (${detail.slice(0, 160)})` : dt("requestFailed");
+  if (caught) console.error("FreeFrame request failed", caught);
+}
 
 function clearBrowserLogin(): void {
   if (browserLoginTimer !== undefined) window.clearTimeout(browserLoginTimer);
@@ -151,7 +155,7 @@ async function pollBrowserLogin(expected: NonNullable<typeof browserLogin>, gene
     await establish(expected.client, tokens.refresh_token, generation);
     error = "";
   } catch (caught) {
-    if (!(caught instanceof DOMException && caught.name === "AbortError")) { clearBrowserLogin(); fail(); }
+    if (!(caught instanceof DOMException && caught.name === "AbortError")) { clearBrowserLogin(); fail(caught); }
   }
   if (operations.current(generation)) render();
 }
@@ -172,7 +176,7 @@ async function startBrowserLogin(): Promise<void> {
     if (launchResult) throw new Error(launchResult);
     operations.assertCurrent(generation);
     void pollBrowserLogin(browserLogin, generation);
-  } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(); }
+  } catch (caught) { if (!(caught instanceof DOMException && caught.name === "AbortError")) fail(caught); }
   if (operations.current(generation)) render();
 }
 
