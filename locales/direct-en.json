@@ -10,6 +10,8 @@
   "sequenceNotExported": "Current sequence not yet exported",
   "noLinkedSequenceAssets": "No linked sequence assets",
   "exportSequence": "Export sequence",
+  "uploadingVersion": "Uploading new version",
+  "versionReady": "Version ready",
   "share": "Share",
   "appearance": "Appearance",
   "fields": "Fields",

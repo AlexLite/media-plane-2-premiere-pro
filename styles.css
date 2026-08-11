@@ -369,6 +369,13 @@ label { color: #94949e; font-size: 11px; font-weight: 500; margin: 10px 0 5px; }
 .ff-asset-thumb { align-items: center; background: linear-gradient(140deg, #363942, #22232a); color: #a5a8b1; display: flex; font-size: 18px; height: 70px; justify-content: center; }
 .ff-asset-name { overflow: hidden; padding: 8px 8px 1px; text-overflow: ellipsis; white-space: nowrap; }
 .ff-asset-meta { color: #919198; font-size: 10px; padding: 0 8px 8px; }
+.ff-upload-status { align-items: center; background: #202023; border: 1px solid #303039; border-radius: 6px; display: flex; gap: 8px; margin: 14px 0 7px; padding: 8px 9px; }
+.ff-upload-status-dot { background: #7563ff; border-radius: 50%; box-shadow: 0 0 0 3px rgba(117,99,255,.16); height: 7px; width: 7px; }
+.ff-upload-status strong, .ff-upload-status small { display: block; }
+.ff-upload-status strong { color: #e8e8ed; font-size: 11px; }
+.ff-upload-status small { color: #9a9aa3; font-size: 10px; margin-top: 2px; }
+.ff-upload-progress { background: #303039; border-radius: 999px; height: 3px; margin: 0 0 8px; overflow: hidden; }
+.ff-upload-progress span { background: #6757f7; display: block; height: 100%; transition: width .15s ease-out; }
 .ff-sequence-item { align-items: center; background: #202022 !important; border: 1px solid #303035 !important; border-radius: 7px !important; color: #e7e7e9 !important; display: flex; flex: 1 1 170px; height: 56px !important; margin: 0; min-height: 56px !important; padding: 5px 8px !important; text-align: left; }
 .ff-sequence-item.selected { border-color: #6757f7 !important; }
 .ff-sequence-item .ff-asset-thumb { border-radius: 4px; font-size: 11px; height: 42px; margin-right: 8px; width: 60px; }

@@ -10,6 +10,8 @@
   "sequenceNotExported": "Активная секвенция ещё не экспортирована",
   "noLinkedSequenceAssets": "Нет связанных ассетов секвенции",
   "exportSequence": "Экспортировать секвенцию",
+  "uploadingVersion": "Загрузка новой версии",
+  "versionReady": "Версия готова",
   "share": "Поделиться",
   "appearance": "Вид",
   "fields": "Поля",
