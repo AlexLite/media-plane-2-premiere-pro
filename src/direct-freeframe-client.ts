@@ -1,5 +1,5 @@
 import type { ReviewComment, ReviewVersion } from "./domain";
-import { fetchWithTimeout } from "./fetch-with-timeout";
+import { fetchWithTimeout, NetworkTimeoutError } from "./fetch-with-timeout";
 import { FreeFrameError, normalizeFreeFrameApiUrl, parseComment, type ReviewCommentCreateInput } from "./freeframe-client";
 
 export interface DirectTokens { access_token: string; refresh_token: string; token_type: "bearer" }
@@ -42,6 +42,7 @@ function tokens(value: unknown): DirectTokens {
   if (!body || !text(body.access_token) || !text(body.refresh_token) || body.token_type !== "bearer") throw new FreeFrameError("FreeFrame returned an invalid login response", 502);
   return { access_token: body.access_token, refresh_token: body.refresh_token, token_type: "bearer" };
 }
+interface DeviceHttpResponse { status: number; ok: boolean; body: unknown }
 function deviceAuthorization(value: unknown): DeviceAuthorization {
   const body = object(value);
   if (!body || !text(body.device_code) || !text(body.user_code) || !text(body.verification_uri) || !integer(body.expires_in) || !integer(body.interval)) throw new FreeFrameError("FreeFrame returned an invalid device authorization response", 502);
@@ -94,8 +95,34 @@ export class DirectFreeFrameClient {
   private async publicPost(path: string, body: unknown): Promise<unknown> {
     return this.parse(await fetchWithTimeout(`${this.root}${path}`, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) }));
   }
+  private async deviceRequest(path: string, body: unknown): Promise<DeviceHttpResponse> {
+    const payload = JSON.stringify(body);
+    if (typeof XMLHttpRequest === "undefined") {
+      const response = await fetchWithTimeout(`${this.root}${path}`, { method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: payload });
+      const raw = await response.text();
+      let parsed: unknown;
+      if (raw) try { parsed = JSON.parse(raw); } catch { throw new FreeFrameError("FreeFrame returned invalid JSON", 502); }
+      return { status: response.status, ok: response.ok, body: parsed };
+    }
+    return new Promise<DeviceHttpResponse>((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open("POST", `${this.root}${path}`, true);
+      request.timeout = 30_000;
+      request.setRequestHeader("Content-Type", "application/json");
+      request.onload = () => {
+        let parsed: unknown;
+        if (request.responseText) try { parsed = JSON.parse(request.responseText); } catch { reject(new FreeFrameError("FreeFrame returned invalid JSON", 502)); return; }
+        resolve({ status: request.status, ok: request.status >= 200 && request.status < 300, body: parsed });
+      };
+      request.onerror = () => reject(new TypeError("FreeFrame network request failed"));
+      request.ontimeout = () => reject(new NetworkTimeoutError(30_000));
+      request.send(payload);
+    });
+  }
   private async devicePost(path: string, body: unknown): Promise<unknown> {
-    return this.parse(await fetchWithTimeout(`${this.root}${path}`, { method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    const response = await this.deviceRequest(path, body);
+    if (!response.ok) throw new FreeFrameError("FreeFrame request failed", response.status);
+    return response.body;
   }
   private async renewSession(): Promise<void> {
     if (!this.sessionHooks) throw new FreeFrameError("FreeFrame session expired", 401);
@@ -128,14 +155,11 @@ export class DirectFreeFrameClient {
   async startDeviceAuthorization(): Promise<DeviceAuthorization> { return deviceAuthorization(await this.devicePost("/auth/device/start", { client_id: "premiere-uxp" })); }
   async pollDeviceAuthorization(deviceCode: string): Promise<DirectTokens | undefined> {
     if (!deviceCode) throw new FreeFrameError("Device code is missing", 400);
-    const response = await fetchWithTimeout(`${this.root}/auth/device/poll`, { method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_code: deviceCode, client_id: "premiere-uxp" }) });
-    const raw = await response.text();
-    let body: unknown;
-    if (raw) try { body = JSON.parse(raw); } catch { throw new FreeFrameError("FreeFrame returned invalid JSON", 502); }
-    const error = object(body)?.error;
+    const response = await this.deviceRequest("/auth/device/poll", { device_code: deviceCode, client_id: "premiere-uxp" });
+    const error = object(response.body)?.error;
     if ((response.status === 202 || response.status === 400 || response.status === 428) && (error === "authorization_pending" || error === "slow_down" || response.status === 202 || response.status === 428)) return undefined;
     if (!response.ok) throw new FreeFrameError("FreeFrame device authorization failed", response.status);
-    const result = tokens(body);
+    const result = tokens(response.body);
     this.accessToken = result.access_token;
     return result;
   }
