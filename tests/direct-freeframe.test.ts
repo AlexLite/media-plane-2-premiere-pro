@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DirectFreeFrameClient, directReviewVersion } from "../src/direct-freeframe-client";
+import { DirectFreeFrameClient, directApiUrl, directReviewVersion } from "../src/direct-freeframe-client";
 import { directLocaleKeys, dt } from "../src/direct-locale";
 import { DirectFreeFrameStore } from "../src/persistence";
 
@@ -8,6 +8,10 @@ const response = (body: unknown, status = 200) => ({ ok: status >= 200 && status
 afterEach(() => vi.unstubAllGlobals());
 
 describe("direct FreeFrame mode", () => {
+  it("uses /api for a hosted FreeFrame UI while keeping an explicit API root", () => {
+    expect(directApiUrl("https://freeframe.test")).toBe("https://freeframe.test/api");
+    expect(directApiUrl("https://freeframe.test/api/")).toBe("https://freeframe.test/api");
+  });
   it("maps common decimal rates to canonical rational timing", () => {
     const mapped = directReviewVersion({ id: "33333333-3333-4333-8333-333333333333", asset_id: "44444444-4444-4444-8444-444444444444", version_number: 1, processing_status: "ready", created_at: "2026-01-01T00:00:00Z", files: [{ duration_seconds: 60, fps: 30000 / 1001 }] });
     expect(mapped).toMatchObject({ duration_seconds: 60, fps_numerator: 30000, fps_denominator: 1001 });

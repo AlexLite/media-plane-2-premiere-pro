@@ -1,5 +1,5 @@
 import type { ReviewComment } from "./domain";
-import { DirectFreeFrameClient, directReviewVersion, type DirectAsset, type DirectProject, type DirectUser, type DirectVersion } from "./direct-freeframe-client";
+import { DirectFreeFrameClient, directApiUrl, directReviewVersion, type DirectAsset, type DirectProject, type DirectUser, type DirectVersion } from "./direct-freeframe-client";
 import { dt } from "./direct-locale";
 import { FreeFrameError, normalizeFreeFrameApiUrl } from "./freeframe-client";
 import { INTERFACE_LOCALE_EVENT } from "./locale-preference";
@@ -39,11 +39,11 @@ const option = (value: string, label: string, selected: string) => `<option valu
 const initials = (value: string) => value.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "FF";
 
 function createClient(url: string): DirectFreeFrameClient {
-  return new DirectFreeFrameClient(url, {
+  return new DirectFreeFrameClient(directApiUrl(url), {
     getRefreshToken: () => store.getRefreshToken(url),
     onTokens: tokens => store.saveRefreshToken(url, tokens.refresh_token),
     onSessionExpired: async () => { await store.clearRefreshToken(url); currentUser = undefined; },
-  });
+  }, url);
 }
 
 function connectionForm(): string {
@@ -151,7 +151,6 @@ async function pollBrowserLogin(expected: NonNullable<typeof browserLogin>, gene
     operations.assertCurrent(generation);
     if (!tokens) { browserLoginTimer = window.setTimeout(() => void pollBrowserLogin(expected, generation), expected.intervalMs); return; }
     clearBrowserLogin();
-    currentUrl = expected.client.root; store.saveUrl(currentUrl);
     await establish(expected.client, tokens.refresh_token, generation);
     error = "";
   } catch (caught) {

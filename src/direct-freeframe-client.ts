@@ -43,6 +43,12 @@ function tokens(value: unknown): DirectTokens {
   return { access_token: body.access_token, refresh_token: body.refresh_token, token_type: "bearer" };
 }
 interface DeviceHttpResponse { status: number; ok: boolean; body: unknown }
+
+/** A hosted FreeFrame UI serves device approval at the origin and its API at /api. */
+export function directApiUrl(serverUrl: string): string {
+  const root = normalizeFreeFrameApiUrl(serverUrl);
+  return root.endsWith("/api") ? root : `${root}/api`;
+}
 function deviceAuthorization(value: unknown): DeviceAuthorization {
   const body = object(value);
   if (!body || !text(body.device_code) || !text(body.user_code) || !text(body.verification_uri) || !integer(body.expires_in) || !integer(body.interval)) throw new FreeFrameError("FreeFrame returned an invalid device authorization response", 502);
@@ -82,9 +88,13 @@ function asset(value: unknown): DirectAsset {
 
 export class DirectFreeFrameClient {
   readonly root: string;
+  readonly deviceRoot: string;
   private accessToken = "";
   private refreshInFlight?: Promise<void>;
-  constructor(root: string, private readonly sessionHooks?: DirectSessionHooks) { this.root = normalizeFreeFrameApiUrl(root); }
+  constructor(root: string, private readonly sessionHooks?: DirectSessionHooks, deviceRoot = root) {
+    this.root = normalizeFreeFrameApiUrl(root);
+    this.deviceRoot = normalizeFreeFrameApiUrl(deviceRoot);
+  }
   private async parse(response: Response): Promise<unknown> {
     const raw = await response.text();
     let body: unknown;
@@ -98,7 +108,7 @@ export class DirectFreeFrameClient {
   private async deviceRequest(path: string, body: unknown): Promise<DeviceHttpResponse> {
     const payload = JSON.stringify(body);
     if (typeof XMLHttpRequest === "undefined") {
-      const response = await fetchWithTimeout(`${this.root}${path}`, { method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: payload });
+      const response = await fetchWithTimeout(`${this.deviceRoot}${path}`, { method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: payload });
       const raw = await response.text();
       let parsed: unknown;
       if (raw) try { parsed = JSON.parse(raw); } catch { throw new FreeFrameError("FreeFrame returned invalid JSON", 502); }
@@ -106,7 +116,7 @@ export class DirectFreeFrameClient {
     }
     return new Promise<DeviceHttpResponse>((resolve, reject) => {
       const request = new XMLHttpRequest();
-      request.open("POST", `${this.root}${path}`, true);
+      request.open("POST", `${this.deviceRoot}${path}`, true);
       request.timeout = 30_000;
       request.setRequestHeader("Content-Type", "application/json");
       request.onload = () => {

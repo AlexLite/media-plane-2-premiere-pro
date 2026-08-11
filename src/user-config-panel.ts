@@ -1,5 +1,5 @@
 import { ct } from "./config-locale";
-import { DirectFreeFrameClient, type DirectUser } from "./direct-freeframe-client";
+import { DirectFreeFrameClient, directApiUrl, type DirectUser } from "./direct-freeframe-client";
 import { normalizeFreeFrameApiUrl } from "./freeframe-client";
 import { INTERFACE_LOCALE_EVENT } from "./locale-preference";
 import { BindingStore, DirectFreeFrameStore } from "./persistence";
@@ -23,11 +23,11 @@ const status = (connected: boolean, identity = "") => `<div class="config-status
 const message = (kind: "saved" | "error" | "", service: "plane" | "freeframe") => kind ? `<p class="config-message ${kind === "error" ? "error" : "notice"}">${escape(kind === "saved" ? ct("saved") : ct(service === "plane" ? "planeError" : "freeframeError"))}</p>` : "";
 
 function createFreeFrameClient(url: string): DirectFreeFrameClient {
-  return new DirectFreeFrameClient(url, {
+  return new DirectFreeFrameClient(directApiUrl(url), {
     getRefreshToken: () => freeFrameStore.getRefreshToken(url),
     onTokens: tokens => freeFrameStore.saveRefreshToken(url, tokens.refresh_token),
     onSessionExpired: async () => { await freeFrameStore.clearRefreshToken(url); freeFrameUser = undefined; },
-  });
+  }, url);
 }
 
 function legacyRender(): void {
